@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aegis.fullname" . }}-config
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.config.nodeEnv | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  TZ: {{ .Values.config.tz | quote }}
+  RUST_LOG: {{ .Values.config.rustLog | quote }}
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: {{ .Values.postgres.db | quote }}
+  POSTGRES_USER: {{ .Values.postgres.user | quote }}
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  OPENSEARCH_NODE: "http://opensearch:9200"
+  OPENSEARCH_USERNAME: "admin"
+  OPENSEARCH_INDEX_PREFIX: "aegis"
+  API_HOST: {{ .Values.config.apiHost | quote }}
+  API_PORT: {{ .Values.config.apiPort | quote }}
+  API_PUBLIC_URL: "http://{{ .Values.ingress.host }}"
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  JWT_ACCESS_TTL: {{ .Values.config.jwtAccessTtl | quote }}
+  JWT_REFRESH_TTL: {{ .Values.config.jwtRefreshTtl | quote }}
+  RATE_LIMIT_MAX: {{ .Values.config.rateLimitMax | quote }}
+  RATE_LIMIT_WINDOW: {{ .Values.config.rateLimitWindow | quote }}
+  WORKER_CONCURRENCY: {{ .Values.config.workerConcurrency | quote }}
+  SCANNER_MAX_CONCURRENCY: {{ .Values.config.scannerMaxConcurrency | quote }}
+  SCANNER_RATE_PPS: {{ .Values.config.scannerRatePps | quote }}
+  ANALYZER_URL: "http://analyzer:{{ .Values.analyzer.port }}"
+  ANALYZER_PORT: {{ .Values.analyzer.port | quote }}
+  ANALYZER_MAX_BYTES: {{ .Values.analyzer.maxBytes | quote }}
+  SEED_ADMIN_EMAIL: {{ .Values.config.seedAdminEmail | quote }}
+  ALERTS_ENABLED: {{ .Values.config.alertsEnabled | quote }}

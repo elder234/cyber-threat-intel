@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aegis-config
+  namespace: aegis
+  labels:
+    app.kubernetes.io/part-of: aegis-cti
+data:
+  NODE_ENV: "development"
+  LOG_LEVEL: "info"
+  TZ: "UTC"
+  RUST_LOG: "info,aegis=debug"
+
+  # PostgreSQL connection (passwords injected via Secret)
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "aegis"
+  POSTGRES_USER: "aegis"
+
+  # Redis
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+
+  # OpenSearch
+  OPENSEARCH_NODE: "http://opensearch:9200"
+  OPENSEARCH_USERNAME: "admin"
+  OPENSEARCH_INDEX_PREFIX: "aegis"
+
+  # API
+  API_HOST: "0.0.0.0"
+  API_PORT: "8080"
+  API_PUBLIC_URL: "http://localhost:8080"
+  CORS_ORIGINS: "http://localhost:8080"
+
+  # JWT TTLs
+  JWT_ACCESS_TTL: "900"
+  JWT_REFRESH_TTL: "1209600"
+
+  # Rate limiting
+  RATE_LIMIT_MAX: "300"
+  RATE_LIMIT_WINDOW: "60"
+
+  # Rust services
+  WORKER_CONCURRENCY: "8"
+  SCANNER_MAX_CONCURRENCY: "512"
+  SCANNER_RATE_PPS: "2000"
+
+  # Analyzer
+  ANALYZER_URL: "http://analyzer:7000"
+  ANALYZER_PORT: "7000"
+  ANALYZER_MAX_BYTES: "33554432"
+
+  # Seed admin
+  SEED_ADMIN_EMAIL: "admin@aegis.local"
+
+  # Alerts
+  ALERTS_ENABLED: "true"

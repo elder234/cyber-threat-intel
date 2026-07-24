@@ -1,0 +1,196 @@
+# -- Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# -- Namespace (created if createNamespace is true)
+createNamespace: true
+
+# -- PostgreSQL
+postgres:
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  storage:
+    size: 10Gi
+    storageClassName: ""
+  db: aegis
+  user: aegis
+  password: change_me_postgres
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# -- Redis
+redis:
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  password: change_me_redis
+  maxmemory: 512mb
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 640Mi
+
+# -- OpenSearch
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: "2.13.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  storage:
+    size: 20Gi
+    storageClassName: ""
+  javaOpts: "-Xms512m -Xmx512m"
+  password: change_me_opensearch
+  securityDisabled: true
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# -- API (Node.js Fastify)
+api:
+  image:
+    repository: aegis-cti/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Worker (Rust)
+worker:
+  image:
+    repository: aegis-cti/worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Collectors (Rust)
+collectors:
+  image:
+    repository: aegis-cti/collectors
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Scanner (Rust)
+scanner:
+  image:
+    repository: aegis-cti/scanner
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+# -- Analyzer (Rust HTTP sidecar)
+analyzer:
+  image:
+    repository: aegis-cti/analyzer
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 7000
+  maxBytes: "33554432"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Web (Nginx + React SPA)
+web:
+  image:
+    repository: aegis-cti/web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+
+# -- Ingress
+ingress:
+  enabled: true
+  className: nginx
+  host: aegis.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/websocket-services: "api"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+  tls: []
+
+# -- Common config
+config:
+  nodeEnv: development
+  logLevel: info
+  tz: UTC
+  rustLog: "info,aegis=debug"
+  apiHost: "0.0.0.0"
+  apiPort: "8080"
+  corsOrigins: "http://localhost:8080"
+  jwtAccessTtl: "900"
+  jwtRefreshTtl: "1209600"
+  rateLimitMax: "300"
+  rateLimitWindow: "60"
+  workerConcurrency: "8"
+  scannerMaxConcurrency: "512"
+  scannerRatePps: "2000"
+  seedAdminEmail: "admin@aegis.local"
+  alertsEnabled: "true"
+
+# -- Secrets (override in production)
+secrets:
+  jwtAccessSecret: change_me_access_secret
+  jwtRefreshSecret: change_me_refresh_secret
+  seedAdminPassword: ChangeMe123!

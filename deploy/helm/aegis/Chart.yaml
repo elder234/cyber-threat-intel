@@ -1,0 +1,12 @@
+apiVersion: v2
+name: aegis
+description: Helm chart for the Aegis CTI platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cti
+  - threat-intelligence
+  - security
+maintainers:
+  - name: aegis-cti

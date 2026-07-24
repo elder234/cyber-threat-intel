@@ -1,0 +1,203 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Aegis CTI — full local stack
+# Usage: cp .env.example .env && docker compose up -d --build
+# ─────────────────────────────────────────────────────────────────────────────
+name: aegis-cti
+
+x-common-env: &common-env
+  TZ: ${TZ:-UTC}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+networks:
+  aegis:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  osdata:
+
+services:
+  # ── PostgreSQL — system of record ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aegis}
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis} -d ${POSTGRES_DB:-aegis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [aegis]
+
+  # ── Redis — cache / queues / pub-sub ───────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-change_me_redis}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-change_me_redis}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [aegis]
+
+  # ── OpenSearch — full-text / IOC search ────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD:-change_me_opensearch}"
+      - plugins.security.disabled=true   # dev only; enable TLS+auth in prod
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+    networks: [aegis]
+
+  # ── Node.js API — REST + GraphQL + WS ──────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      ANALYZER_URL: ${ANALYZER_URL:-http://analyzer:7000}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+      analyzer: { condition: service_started }
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [aegis]
+
+  # ── Rust worker — background jobs, feed parsing, IOC processing ─────────────
+  worker:
+    build:
+      context: ./services/rust-core
+      dockerfile: Dockerfile
+      args:
+        BIN: aegis-worker
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [aegis]
+
+  # ── Rust collectors — OSINT + threat feeds ─────────────────────────────────
+  collectors:
+    build:
+      context: ./services/rust-core
+      dockerfile: Dockerfile
+      args:
+        BIN: aegis-collectors
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [aegis]
+
+  # ── Rust scanner — network/TLS/HTTP scanning worker ─────────────────────────
+  scanner:
+    build:
+      context: ./services/rust-core
+      dockerfile: Dockerfile
+      args:
+        BIN: aegis-scanner
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      RUST_LOG: ${RUST_LOG:-info}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [aegis]
+
+  # ── Web console — React SPA + Nginx reverse proxy ───────────────────────────
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_started }
+    ports:
+      - "8080:8080"
+      - "8443:443"
+    networks: [aegis]
+
+  # ── Aegis analyzer sidecar — Module 9 malware static analysis ─────────────
+  analyzer:
+    build:
+      context: ./services/rust-core
+      dockerfile: Dockerfile
+      args:
+        BIN: aegis-analyzer
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      RUST_LOG: ${RUST_LOG:-info}
+      ANALYZER_PORT: "7000"
+      ANALYZER_MAX_BYTES: "33554432"
+    expose:
+      - "7000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [aegis]
+
+  # ── Tor proxy (optional; enable with `--profile tor`) ──────────────────────
+  tor:
+    image: dperson/torproxy:latest
+    restart: unless-stopped
+    profiles: ["tor"]
+    ports:
+      - "9050:9050"
+    networks: [aegis]

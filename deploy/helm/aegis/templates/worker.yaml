@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aegis.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.componentLabels" (dict "ctx" . "component" "worker") | nindent 8 }}
+    spec:
+      containers:
+        - name: worker
+          image: {{ include "aegis.image" (dict "img" .Values.worker.image "globals" .Values.global) }}
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "aegis.fullname" . }}-config
+            - secretRef:
+                name: {{ include "aegis.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

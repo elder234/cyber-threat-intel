@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scanner
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.componentLabels" (dict "ctx" . "component" "scanner") | nindent 4 }}
+spec:
+  replicas: {{ .Values.scanner.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aegis.componentSelectorLabels" (dict "ctx" . "component" "scanner") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.componentLabels" (dict "ctx" . "component" "scanner") | nindent 8 }}
+    spec:
+      containers:
+        - name: scanner
+          image: {{ include "aegis.image" (dict "img" .Values.scanner.image "globals" .Values.global) }}
+          imagePullPolicy: {{ .Values.scanner.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "aegis.fullname" . }}-config
+            - secretRef:
+                name: {{ include "aegis.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.scanner.resources | nindent 12 }}

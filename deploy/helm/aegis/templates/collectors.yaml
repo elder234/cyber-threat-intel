@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collectors
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.componentLabels" (dict "ctx" . "component" "collectors") | nindent 4 }}
+spec:
+  replicas: {{ .Values.collectors.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aegis.componentSelectorLabels" (dict "ctx" . "component" "collectors") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.componentLabels" (dict "ctx" . "component" "collectors") | nindent 8 }}
+    spec:
+      containers:
+        - name: collectors
+          image: {{ include "aegis.image" (dict "img" .Values.collectors.image "globals" .Values.global) }}
+          imagePullPolicy: {{ .Values.collectors.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "aegis.fullname" . }}-config
+            - secretRef:
+                name: {{ include "aegis.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.collectors.resources | nindent 12 }}

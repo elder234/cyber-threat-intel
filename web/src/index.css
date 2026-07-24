@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ *
+ * Aegis CTI — global surface styles.
+ * Dark SOC console. The design leans on a deep desaturated slate base
+ * (never pure black) with a single reserved amber "signal" accent used
+ * only for live/active threats. Severity has its own fixed color scale.
+ * ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-base-900 text-ink font-sans antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Thin, unobtrusive scrollbars that suit a dense operator UI. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #26323f transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #26323f;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4a5c;
+  background-clip: content-box;
+}
+
+/* Numeric/indicator values are always monospace and tabular. */
+.data {
+  @apply font-mono tabular-nums;
+}
+
+/* Panel: the base container for every widget on the console. */
+.panel {
+  @apply rounded-lg border border-base-600 bg-base-800 shadow-panel;
+}
+
+.panel-header {
+  @apply flex items-center justify-between border-b border-base-600 px-4 py-2.5;
+}
+
+.panel-title {
+  @apply font-display text-xs font-semibold uppercase tracking-[0.14em] text-ink-dim;
+}
+
+/* Eyebrow label — small tracked caption used above headings. */
+.eyebrow {
+  @apply font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint;
+}
+
+/* Form control — text inputs / selects across management forms. */
+.input {
+  @apply w-full rounded-md border border-base-600 bg-base-900 px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-signal;
+}
+
+/* Focus ring — keyboard accessibility, tuned to the amber signal. */
+*:focus-visible {
+  outline: 2px solid #f5a524;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

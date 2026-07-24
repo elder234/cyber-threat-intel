@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.componentLabels" (dict "ctx" . "component" "opensearch") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "aegis.componentSelectorLabels" (dict "ctx" . "component" "opensearch") | nindent 4 }}
+  ports:
+    - port: 9200
+      targetPort: 9200
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+  namespace: {{ include "aegis.namespace" . }}
+  labels:
+    {{- include "aegis.componentLabels" (dict "ctx" . "component" "opensearch") | nindent 4 }}
+spec:
+  serviceName: opensearch
+  replicas: {{ .Values.opensearch.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aegis.componentSelectorLabels" (dict "ctx" . "component" "opensearch") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aegis.componentLabels" (dict "ctx" . "component" "opensearch") | nindent 8 }}
+    spec:
+      initContainers:
+        - name: sysctl
+          image: busybox:1.36
+          command: ["sysctl", "-w", "vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: opensearch
+          image: {{ include "aegis.image" (dict "img" .Values.opensearch.image "globals" .Values.global) }}
+          imagePullPolicy: {{ .Values.opensearch.image.pullPolicy }}
+          ports:
+            - containerPort: 9200
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: bootstrap.memory_lock
+              value: "true"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ .Values.opensearch.javaOpts | quote }}
+            - name: plugins.security.disabled
+              value: {{ .Values.opensearch.securityDisabled | quote }}
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aegis.fullname" . }}-secrets
+                  key: OPENSEARCH_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 10
+          resources:
+            {{- toYaml .Values.opensearch.resources | nindent 12 }}
+          volumeMounts:
+            - name: osdata
+              mountPath: /usr/share/opensearch/data
+  volumeClaimTemplates:
+    - metadata:
+        name: osdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.opensearch.storage.storageClassName }}
+        storageClassName: {{ .Values.opensearch.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.opensearch.storage.size }}

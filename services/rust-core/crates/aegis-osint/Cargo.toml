@@ -1,0 +1,23 @@
+[package]
+name = "aegis-osint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+aegis-ioc = { path = "../aegis-ioc" }
+tokio.workspace = true
+sqlx.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+futures.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread"] }

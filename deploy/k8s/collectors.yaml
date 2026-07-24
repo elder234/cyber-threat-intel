@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collectors
+  namespace: aegis
+  labels:
+    app.kubernetes.io/name: collectors
+    app.kubernetes.io/part-of: aegis-cti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: collectors
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: collectors
+        app.kubernetes.io/part-of: aegis-cti
+    spec:
+      containers:
+        - name: collectors
+          image: aegis-cti/collectors:latest
+          envFrom:
+            - configMapRef:
+                name: aegis-config
+            - secretRef:
+                name: aegis-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
