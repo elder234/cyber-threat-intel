@@ -134,7 +134,11 @@ pub struct ParsedCve {
 /// Parse an NVD 2.0 page into flattened CVEs. Pure — unit-tested.
 pub fn parse(body: &str) -> anyhow::Result<(usize, Vec<ParsedCve>)> {
     let resp: NvdResponse = serde_json::from_str(body)?;
-    let cves = resp.vulnerabilities.iter().map(|w| flatten(&w.cve)).collect();
+    let cves = resp
+        .vulnerabilities
+        .iter()
+        .map(|w| flatten(&w.cve))
+        .collect();
     Ok((resp.total_results, cves))
 }
 
@@ -152,7 +156,10 @@ fn flatten(cve: &CveItem) -> ParsedCve {
     let (score, severity, vector) = match v31 {
         Some(m) => (
             Some(m.cvss_data.base_score),
-            m.cvss_data.base_severity.as_ref().map(|s| s.to_ascii_lowercase()),
+            m.cvss_data
+                .base_severity
+                .as_ref()
+                .map(|s| s.to_ascii_lowercase()),
             m.cvss_data.vector_string.clone(),
         ),
         None => (None, None, None),
@@ -214,14 +221,19 @@ fn parse_ts(s: Option<&str>) -> Option<DateTime<Utc>> {
 pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let mut stats = CollectStats::default();
     let api_key = std::env::var("NVD_API_KEY").ok().filter(|k| !k.is_empty());
-    let delay = if api_key.is_some() { WITH_KEY_DELAY } else { NO_KEY_DELAY };
+    let delay = if api_key.is_some() {
+        WITH_KEY_DELAY
+    } else {
+        NO_KEY_DELAY
+    };
     let client = http::default_client()?;
 
     let mut start = 0usize;
     loop {
-        let mut req = client
-            .get(NVD_URL)
-            .query(&[("resultsPerPage", PAGE_SIZE.to_string()), ("startIndex", start.to_string())]);
+        let mut req = client.get(NVD_URL).query(&[
+            ("resultsPerPage", PAGE_SIZE.to_string()),
+            ("startIndex", start.to_string()),
+        ]);
         if let Some(k) = &api_key {
             req = req.header("apiKey", k);
         }

@@ -62,7 +62,14 @@ pub fn identify(port: u16, banner: &str) -> ServiceInfo {
 
     // HTTP Server header line: "Server: nginx/1.25.3"
     if let Some(server) = extract_header(b, "server") {
-        info.service = Some(if port == 443 || port == 8443 { "https" } else { "http" }.into());
+        info.service = Some(
+            if port == 443 || port == 8443 {
+                "https"
+            } else {
+                "http"
+            }
+            .into(),
+        );
         if let Some((name, ver)) = server.split_once('/') {
             info.product = Some(name.trim().to_string());
             info.version = Some(ver.split_whitespace().next().unwrap_or("").to_string());

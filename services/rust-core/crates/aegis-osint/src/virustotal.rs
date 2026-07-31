@@ -108,7 +108,9 @@ pub async fn lookup(
     value: &str,
 ) -> anyhow::Result<Option<ProviderVerdict>> {
     let Some(key) = api_key else { return Ok(None) };
-    let Some(url) = endpoint(kind, value) else { return Ok(None) };
+    let Some(url) = endpoint(kind, value) else {
+        return Ok(None);
+    };
 
     let resp = client.get(&url).header("x-apikey", key).send().await?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {

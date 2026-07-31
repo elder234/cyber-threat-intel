@@ -29,7 +29,11 @@ impl JobQueue {
         let worker_id = format!(
             "{}-{}",
             hostname(),
-            Uuid::new_v4().simple().to_string().get(0..8).unwrap_or("00000000")
+            Uuid::new_v4()
+                .simple()
+                .to_string()
+                .get(0..8)
+                .unwrap_or("00000000")
         );
         Self { pool, worker_id }
     }
@@ -79,15 +83,13 @@ impl JobQueue {
         queue: &str,
         priority: i32,
     ) -> anyhow::Result<i64> {
-        let (id,): (i64,) = sqlx::query_as(
-            "SELECT aegis.enqueue_job($1, $2, $3, $4)",
-        )
-        .bind(kind)
-        .bind(payload)
-        .bind(queue)
-        .bind(priority)
-        .fetch_one(&self.pool)
-        .await?;
+        let (id,): (i64,) = sqlx::query_as("SELECT aegis.enqueue_job($1, $2, $3, $4)")
+            .bind(kind)
+            .bind(payload)
+            .bind(queue)
+            .bind(priority)
+            .fetch_one(&self.pool)
+            .await?;
         Ok(id)
     }
 

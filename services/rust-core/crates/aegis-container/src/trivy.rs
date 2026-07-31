@@ -73,12 +73,17 @@ pub fn parse(json: &str) -> anyhow::Result<Vec<Finding>> {
             };
             findings.push(
                 Finding::new(
-                    if v.id.is_empty() { "CVE-UNKNOWN".to_string() } else { v.id.clone() },
+                    if v.id.is_empty() {
+                        "CVE-UNKNOWN".to_string()
+                    } else {
+                        v.id.clone()
+                    },
                     Category::Vulnerability,
                     map_severity(&v.severity),
                     title,
                     remediation,
-                ).at(location),
+                )
+                .at(location),
             );
         }
     }

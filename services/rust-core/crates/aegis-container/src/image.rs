@@ -22,8 +22,15 @@ pub struct ImageConfig {
 fn env_key_looks_secret(key: &str) -> bool {
     let k = key.to_ascii_uppercase();
     const KEYS: &[&str] = &[
-        "PASSWORD", "PASSWD", "SECRET", "TOKEN", "API_KEY", "APIKEY",
-        "ACCESS_KEY", "PRIVATE_KEY", "AWS_SECRET_ACCESS_KEY",
+        "PASSWORD",
+        "PASSWD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        "APIKEY",
+        "ACCESS_KEY",
+        "PRIVATE_KEY",
+        "AWS_SECRET_ACCESS_KEY",
     ];
     KEYS.iter().any(|s| k.contains(s))
 }
@@ -57,7 +64,9 @@ pub fn analyze(cfg: &ImageConfig) -> Vec<Finding> {
     let user = cfg.user.trim();
     if user.is_empty() || user == "root" || user == "0" || user.starts_with("0:") {
         findings.push(Finding::new(
-            "IMG-USER-ROOT", Category::ImageConfig, Severity::High,
+            "IMG-USER-ROOT",
+            Category::ImageConfig,
+            Severity::High,
             "Image is configured to run as root",
             "Set a non-root USER in the image config so the container drops root at runtime",
         ));
@@ -68,10 +77,13 @@ pub fn analyze(cfg: &ImageConfig) -> Vec<Finding> {
         if env_key_looks_secret(key) {
             findings.push(
                 Finding::new(
-                    "IMG-SECRET-ENV", Category::Secret, Severity::High,
+                    "IMG-SECRET-ENV",
+                    Category::Secret,
+                    Severity::High,
                     "Secret-looking value baked into the image environment",
                     "Remove secrets from image env; inject them at runtime via a secrets manager",
-                ).at(key.to_string()),
+                )
+                .at(key.to_string()),
             );
         }
     }
@@ -81,10 +93,13 @@ pub fn analyze(cfg: &ImageConfig) -> Vec<Finding> {
             if let Some(name) = sensitive_port(port) {
                 findings.push(
                     Finding::new(
-                        "IMG-SENSITIVE-PORT", Category::ImageConfig, Severity::Medium,
+                        "IMG-SENSITIVE-PORT",
+                        Category::ImageConfig,
+                        Severity::Medium,
                         format!("Sensitive service port exposed: {port} ({name})"),
                         "Do not expose management/remote-access ports from application images",
-                    ).at(spec.clone()),
+                    )
+                    .at(spec.clone()),
                 );
             }
         }
@@ -99,14 +114,20 @@ mod tests {
 
     #[test]
     fn flags_root_user() {
-        let cfg = ImageConfig { user: String::new(), ..Default::default() };
+        let cfg = ImageConfig {
+            user: String::new(),
+            ..Default::default()
+        };
         let f = analyze(&cfg);
         assert!(f.iter().any(|x| x.id == "IMG-USER-ROOT"));
     }
 
     #[test]
     fn nonroot_user_ok() {
-        let cfg = ImageConfig { user: "app".into(), ..Default::default() };
+        let cfg = ImageConfig {
+            user: "app".into(),
+            ..Default::default()
+        };
         let f = analyze(&cfg);
         assert!(!f.iter().any(|x| x.id == "IMG-USER-ROOT"));
     }
@@ -126,7 +147,11 @@ mod tests {
     fn flags_ssh_port() {
         let mut ports = BTreeMap::new();
         ports.insert("22/tcp".to_string(), serde_json::json!({}));
-        let cfg = ImageConfig { user: "app".into(), exposed_ports: ports, ..Default::default() };
+        let cfg = ImageConfig {
+            user: "app".into(),
+            exposed_ports: ports,
+            ..Default::default()
+        };
         let f = analyze(&cfg);
         assert!(f.iter().any(|x| x.id == "IMG-SENSITIVE-PORT"));
     }

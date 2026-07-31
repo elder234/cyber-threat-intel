@@ -59,7 +59,11 @@ pub async fn run_collector(slug: &str, jq: &JobQueue) -> anyhow::Result<CollectS
 mod tests {
     #[test]
     fn stats_json_shape() {
-        let s = super::CollectStats { fetched: 3, inserted: 2, errors: 1 };
+        let s = super::CollectStats {
+            fetched: 3,
+            inserted: 2,
+            errors: 1,
+        };
         let v = s.to_json();
         assert_eq!(v["fetched"], 3);
         assert_eq!(v["inserted"], 2);

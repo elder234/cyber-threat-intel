@@ -41,12 +41,17 @@ async fn main() -> anyhow::Result<()> {
         }
         let jobs = match jq.claim(QUEUE, 2).await {
             Ok(j) => j,
-            Err(e) => { tracing::error!(error=%e, "claim failed"); continue; }
+            Err(e) => {
+                tracing::error!(error=%e, "claim failed");
+                continue;
+            }
         };
         for job in jobs {
             let id = job.id;
             match run_scan_job(&pool, &cfg, &job.payload).await {
-                Ok(()) => { let _ = jq.complete(id).await; }
+                Ok(()) => {
+                    let _ = jq.complete(id).await;
+                }
                 Err(e) => {
                     tracing::warn!(job=id, error=%format!("{e:#}"), "scan job failed");
                     let _ = jq.fail(id, &format!("{e:#}")).await;
@@ -74,7 +79,9 @@ struct ScanProfile {
 }
 impl Default for ScanProfile {
     fn default() -> Self {
-        Self { ports: default_ports() }
+        Self {
+            ports: default_ports(),
+        }
     }
 }
 fn default_ports() -> String {
@@ -82,7 +89,11 @@ fn default_ports() -> String {
 }
 
 /// Execute a queued scan: enforce authorization, scan, persist, update status.
-async fn run_scan_job(pool: &Pool, cfg: &Config, payload: &serde_json::Value) -> anyhow::Result<()> {
+async fn run_scan_job(
+    pool: &Pool,
+    cfg: &Config,
+    payload: &serde_json::Value,
+) -> anyhow::Result<()> {
     let p: ScanPayload = serde_json::from_value(payload.clone())
         .map_err(|e| anyhow::anyhow!("bad scan payload: {e}"))?;
 
@@ -107,10 +118,12 @@ async fn run_scan_job(pool: &Pool, cfg: &Config, payload: &serde_json::Value) ->
         }
     }
 
-    sqlx::query("UPDATE aegis.scans SET status='running', started_at=now(), progress=5 WHERE id=$1::uuid")
-        .bind(&p.scan_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE aegis.scans SET status='running', started_at=now(), progress=5 WHERE id=$1::uuid",
+    )
+    .bind(&p.scan_id)
+    .execute(pool)
+    .await?;
 
     let ip: IpAddr = resolve_target(&p.target)
         .await
@@ -229,7 +242,11 @@ async fn persist_tls(
     .await?;
 
     for finding in &rep.weak_findings {
-        let sev = if finding.contains("expired") { "high" } else { "medium" };
+        let sev = if finding.contains("expired") {
+            "high"
+        } else {
+            "medium"
+        };
         sqlx::query(
             "INSERT INTO aegis.findings(scan_id, category, title, severity, description, evidence)
              VALUES ($1::uuid, 'tls', $2, $3::aegis.severity, $4, $5)",
@@ -238,7 +255,9 @@ async fn persist_tls(
         .bind(format!("TLS: {finding}"))
         .bind(sev)
         .bind(format!("{}:{} — {}", rep.host, rep.port, finding))
-        .bind(serde_json::json!({ "host": rep.host, "port": rep.port, "fingerprint": rep.sha256_fp }))
+        .bind(
+            serde_json::json!({ "host": rep.host, "port": rep.port, "fingerprint": rep.sha256_fp }),
+        )
         .execute(pool)
         .await?;
     }
@@ -255,12 +274,20 @@ async fn resolve_target(target: &str) -> Option<IpAddr> {
     let host = host.strip_prefix("http://").unwrap_or(host);
     let host = host.strip_prefix("https://").unwrap_or(host);
     let lookup = format!("{host}:0");
-    tokio::net::lookup_host(lookup).await.ok()?.next().map(|s| s.ip())
+    tokio::net::lookup_host(lookup)
+        .await
+        .ok()?
+        .next()
+        .map(|s| s.ip())
 }
 
 /// Fetch HTTP headers for the given host/port and analyze them.
 async fn analyze_http(target: &str, port: u16) -> Option<Vec<http_headers::HeaderFinding>> {
-    let scheme = if matches!(port, 443 | 8443) { "https" } else { "http" };
+    let scheme = if matches!(port, 443 | 8443) {
+        "https"
+    } else {
+        "http"
+    };
     let host = target
         .trim_start_matches("http://")
         .trim_start_matches("https://")
@@ -275,7 +302,12 @@ async fn analyze_http(target: &str, port: u16) -> Option<Vec<http_headers::Heade
     let pairs: Vec<(String, String)> = resp
         .headers()
         .iter()
-        .map(|(k, v)| (k.as_str().to_ascii_lowercase(), v.to_str().unwrap_or("").to_string()))
+        .map(|(k, v)| {
+            (
+                k.as_str().to_ascii_lowercase(),
+                v.to_str().unwrap_or("").to_string(),
+            )
+        })
         .collect();
     Some(http_headers::analyze(&pairs))
 }
@@ -294,7 +326,12 @@ async fn cli_scan(target: &str, portspec: &str) -> anyhow::Result<()> {
             op.ip,
             op.port,
             op.service.service.as_deref().unwrap_or("?"),
-            op.banner.as_deref().unwrap_or("").lines().next().unwrap_or("")
+            op.banner
+                .as_deref()
+                .unwrap_or("")
+                .lines()
+                .next()
+                .unwrap_or("")
         );
     }
     println!("{} open port(s)", open.len());

@@ -90,7 +90,8 @@ pub fn normalize(raw: &str) -> Option<NormalizedIoc> {
     }
 
     // URL
-    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("ftp://") {
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("ftp://")
+    {
         return mk(IocType::Url, v); // keep original case for path
     }
 
@@ -103,7 +104,14 @@ pub fn normalize(raw: &str) -> Option<NormalizedIoc> {
 
     // IP literal
     if let Ok(ip) = lower.parse::<std::net::IpAddr>() {
-        return mk(if ip.is_ipv4() { IocType::Ipv4 } else { IocType::Ipv6 }, lower);
+        return mk(
+            if ip.is_ipv4() {
+                IocType::Ipv4
+            } else {
+                IocType::Ipv6
+            },
+            lower,
+        );
     }
 
     // Domain: at least one dot, valid label characters, a non-numeric TLD
@@ -136,7 +144,10 @@ fn is_domain(s: &str) -> bool {
 }
 
 fn mk(t: IocType, v: String) -> Option<NormalizedIoc> {
-    Some(NormalizedIoc { ioc_type: t, value: v })
+    Some(NormalizedIoc {
+        ioc_type: t,
+        value: v,
+    })
 }
 
 #[cfg(test)]
@@ -152,8 +163,18 @@ mod tests {
 
     #[test]
     fn detects_hashes() {
-        assert_eq!(normalize("d41d8cd98f00b204e9800998ecf8427e").unwrap().ioc_type, IocType::Md5);
-        assert_eq!(normalize("da39a3ee5e6b4b0d3255bfef95601890afd80709").unwrap().ioc_type, IocType::Sha1);
+        assert_eq!(
+            normalize("d41d8cd98f00b204e9800998ecf8427e")
+                .unwrap()
+                .ioc_type,
+            IocType::Md5
+        );
+        assert_eq!(
+            normalize("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+                .unwrap()
+                .ioc_type,
+            IocType::Sha1
+        );
         let s256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
         assert_eq!(normalize(s256).unwrap().ioc_type, IocType::Sha256);
     }
@@ -161,15 +182,27 @@ mod tests {
     #[test]
     fn detects_ip_and_cidr() {
         assert_eq!(normalize("8.8.8.8").unwrap().ioc_type, IocType::Ipv4);
-        assert_eq!(normalize("2001:4860:4860::8888").unwrap().ioc_type, IocType::Ipv6);
+        assert_eq!(
+            normalize("2001:4860:4860::8888").unwrap().ioc_type,
+            IocType::Ipv6
+        );
         assert_eq!(normalize("10.0.0.0/8").unwrap().ioc_type, IocType::Cidr);
     }
 
     #[test]
     fn detects_domain_url_email() {
-        assert_eq!(normalize("evil-domain.com").unwrap().ioc_type, IocType::Domain);
-        assert_eq!(normalize("https://evil.com/payload").unwrap().ioc_type, IocType::Url);
-        assert_eq!(normalize("attacker@evil.com").unwrap().ioc_type, IocType::Email);
+        assert_eq!(
+            normalize("evil-domain.com").unwrap().ioc_type,
+            IocType::Domain
+        );
+        assert_eq!(
+            normalize("https://evil.com/payload").unwrap().ioc_type,
+            IocType::Url
+        );
+        assert_eq!(
+            normalize("attacker@evil.com").unwrap().ioc_type,
+            IocType::Email
+        );
     }
 
     #[test]

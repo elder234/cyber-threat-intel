@@ -77,7 +77,13 @@ fn split_csv(line: &str) -> Vec<String> {
 pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let mut stats = CollectStats::default();
     let client = http::default_client()?;
-    let text = client.get(URLHAUS_URL).send().await?.error_for_status()?.text().await?;
+    let text = client
+        .get(URLHAUS_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     let rows = parse(&text);
     stats.fetched = rows.len();
 

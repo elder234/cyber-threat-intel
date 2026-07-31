@@ -27,7 +27,13 @@ pub fn parse(body: &str) -> anyhow::Result<Vec<FeodoEntry>> {
 pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let mut stats = CollectStats::default();
     let client = http::default_client()?;
-    let body = client.get(FEODO_URL).send().await?.error_for_status()?.text().await?;
+    let body = client
+        .get(FEODO_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     let entries = parse(&body)?;
     stats.fetched = entries.len();
 

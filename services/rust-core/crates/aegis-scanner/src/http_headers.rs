@@ -14,18 +14,36 @@ pub struct HeaderFinding {
 /// Security headers we expect on a hardened web endpoint, with the severity of
 /// their absence.
 const CHECKS: &[(&str, &str, &str)] = &[
-    ("strict-transport-security", "medium",
-     "Add HSTS: max-age=63072000; includeSubDomains; preload"),
-    ("content-security-policy", "medium",
-     "Define a Content-Security-Policy restricting script/style/frame sources"),
-    ("x-content-type-options", "low",
-     "Set X-Content-Type-Options: nosniff"),
-    ("x-frame-options", "low",
-     "Set X-Frame-Options: DENY (or use CSP frame-ancestors)"),
-    ("referrer-policy", "low",
-     "Set Referrer-Policy: no-referrer or strict-origin-when-cross-origin"),
-    ("permissions-policy", "low",
-     "Set Permissions-Policy to restrict powerful browser features"),
+    (
+        "strict-transport-security",
+        "medium",
+        "Add HSTS: max-age=63072000; includeSubDomains; preload",
+    ),
+    (
+        "content-security-policy",
+        "medium",
+        "Define a Content-Security-Policy restricting script/style/frame sources",
+    ),
+    (
+        "x-content-type-options",
+        "low",
+        "Set X-Content-Type-Options: nosniff",
+    ),
+    (
+        "x-frame-options",
+        "low",
+        "Set X-Frame-Options: DENY (or use CSP frame-ancestors)",
+    ),
+    (
+        "referrer-policy",
+        "low",
+        "Set Referrer-Policy: no-referrer or strict-origin-when-cross-origin",
+    ),
+    (
+        "permissions-policy",
+        "low",
+        "Set Permissions-Policy to restrict powerful browser features",
+    ),
 ];
 
 /// Normalize header names to lowercase keys for lookup.
@@ -42,7 +60,12 @@ where
 /// Analyze headers and return findings for missing/weak controls.
 pub fn analyze(headers: &[(String, String)]) -> Vec<HeaderFinding> {
     let present = |name: &str| headers.iter().any(|(k, _)| k == name);
-    let get = |name: &str| headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    let get = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
 
     let mut findings = Vec::new();
 
@@ -120,7 +143,10 @@ mod tests {
     #[test]
     fn no_missing_findings_when_all_present() {
         let h = normalize_headers(vec![
-            ("Strict-Transport-Security", "max-age=63072000; includeSubDomains"),
+            (
+                "Strict-Transport-Security",
+                "max-age=63072000; includeSubDomains",
+            ),
             ("Content-Security-Policy", "default-src 'self'"),
             ("X-Content-Type-Options", "nosniff"),
             ("X-Frame-Options", "DENY"),
@@ -133,7 +159,10 @@ mod tests {
 
     #[test]
     fn flags_version_disclosure() {
-        let h = normalize_headers(vec![("Server", "Apache/2.4.52"), ("X-Powered-By", "PHP/8.1")]);
+        let h = normalize_headers(vec![
+            ("Server", "Apache/2.4.52"),
+            ("X-Powered-By", "PHP/8.1"),
+        ]);
         let f = analyze(&h);
         assert!(f.iter().any(|x| x.header == "server"));
         assert!(f.iter().any(|x| x.header == "x-powered-by"));
@@ -148,7 +177,10 @@ mod tests {
 
     #[test]
     fn parses_max_age() {
-        assert_eq!(parse_max_age("max-age=63072000; includeSubDomains"), Some(63072000));
+        assert_eq!(
+            parse_max_age("max-age=63072000; includeSubDomains"),
+            Some(63072000)
+        );
         assert_eq!(parse_max_age("includeSubDomains"), None);
     }
 }

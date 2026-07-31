@@ -59,7 +59,8 @@ pub fn analyze_cert(host: &str, port: u16, der: &[u8], now: DateTime<Utc>) -> Tl
         if na_dt < now {
             r.weak_findings.push("certificate expired".into());
         } else if na_dt < now + chrono::Duration::days(30) {
-            r.weak_findings.push("certificate expires within 30 days".into());
+            r.weak_findings
+                .push("certificate expires within 30 days".into());
         }
     }
     if r.is_self_signed == Some(true) {
@@ -78,7 +79,8 @@ pub fn analyze_cert(host: &str, port: u16, der: &[u8], now: DateTime<Utc>) -> Tl
     // Signature algorithm weakness (SHA-1 / MD5).
     let sig_oid = cert.signature_algorithm.algorithm.to_id_string();
     if sig_oid.contains("1.2.840.113549.1.1.5") || sig_oid.contains("1.2.840.113549.1.1.4") {
-        r.weak_findings.push("weak certificate signature algorithm (SHA-1/MD5)".into());
+        r.weak_findings
+            .push("weak certificate signature algorithm (SHA-1/MD5)".into());
     }
 
     r
@@ -107,11 +109,7 @@ pub async fn inspect(host: &str, port: u16) -> anyhow::Result<TlsReport> {
     .with_no_client_auth();
     let connector = TlsConnector::from(Arc::new(config));
 
-    let tcp = timeout(
-        Duration::from_secs(10),
-        TcpStream::connect((host, port)),
-    )
-    .await??;
+    let tcp = timeout(Duration::from_secs(10), TcpStream::connect((host, port))).await??;
 
     let server_name = ServerName::try_from(host.to_string())
         .map_err(|_| anyhow::anyhow!("invalid server name: {host}"))?;
@@ -167,9 +165,15 @@ impl rustls::client::danger::ServerCertVerifier for NoVerify {
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         use rustls::SignatureScheme::*;
         vec![
-            RSA_PKCS1_SHA256, RSA_PKCS1_SHA384, RSA_PKCS1_SHA512,
-            ECDSA_NISTP256_SHA256, ECDSA_NISTP384_SHA384,
-            RSA_PSS_SHA256, RSA_PSS_SHA384, RSA_PSS_SHA512, ED25519,
+            RSA_PKCS1_SHA256,
+            RSA_PKCS1_SHA384,
+            RSA_PKCS1_SHA512,
+            ECDSA_NISTP256_SHA256,
+            ECDSA_NISTP384_SHA384,
+            RSA_PSS_SHA256,
+            RSA_PSS_SHA384,
+            RSA_PSS_SHA512,
+            ED25519,
         ]
     }
 }
@@ -191,7 +195,10 @@ mod tests {
     fn analyze_bad_der_reports_parse_failure() {
         let now = Utc::now();
         let r = analyze_cert("example.com", 443, b"not-a-cert", now);
-        assert!(r.weak_findings.iter().any(|f| f.contains("failed to parse")));
+        assert!(r
+            .weak_findings
+            .iter()
+            .any(|f| f.contains("failed to parse")));
         assert!(r.sha256_fp.is_some());
     }
 }

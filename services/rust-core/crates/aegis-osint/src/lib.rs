@@ -65,14 +65,27 @@ pub async fn enrich_indicator(
     use futures::future::join_all;
 
     // Each future yields Option<ProviderVerdict>; errors are logged then dropped.
-    let vt = run("virustotal", virustotal::lookup(client, keys.virustotal.as_deref(), kind, value));
-    let aip = run("abuseipdb", abuseipdb::lookup(client, keys.abuseipdb.as_deref(), kind, value));
-    let shd = run("shodan", shodan::lookup(client, keys.shodan.as_deref(), kind, value));
-    let grn = run("greynoise", greynoise::lookup(client, keys.greynoise.as_deref(), kind, value));
+    let vt = run(
+        "virustotal",
+        virustotal::lookup(client, keys.virustotal.as_deref(), kind, value),
+    );
+    let aip = run(
+        "abuseipdb",
+        abuseipdb::lookup(client, keys.abuseipdb.as_deref(), kind, value),
+    );
+    let shd = run(
+        "shodan",
+        shodan::lookup(client, keys.shodan.as_deref(), kind, value),
+    );
+    let grn = run(
+        "greynoise",
+        greynoise::lookup(client, keys.greynoise.as_deref(), kind, value),
+    );
     let otx = run("otx", otx::lookup(client, keys.otx.as_deref(), kind, value));
 
     let results = join_all(vec![
-        Box::pin(vt) as std::pin::Pin<Box<dyn std::future::Future<Output = Option<ProviderVerdict>> + Send>>,
+        Box::pin(vt)
+            as std::pin::Pin<Box<dyn std::future::Future<Output = Option<ProviderVerdict>> + Send>>,
         Box::pin(aip),
         Box::pin(shd),
         Box::pin(grn),

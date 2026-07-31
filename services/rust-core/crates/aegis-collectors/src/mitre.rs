@@ -123,7 +123,9 @@ pub fn parse(body: &str) -> anyhow::Result<Attack> {
         if o.otype != "x-mitre-tactic" || o.revoked {
             continue;
         }
-        let Some((id, url)) = o.attack_ref() else { continue };
+        let Some((id, url)) = o.attack_ref() else {
+            continue;
+        };
         let shortname = o.shortname.clone().unwrap_or_default();
         if !shortname.is_empty() {
             shortname_to_id.insert(shortname.clone(), id.to_string());
@@ -143,7 +145,9 @@ pub fn parse(body: &str) -> anyhow::Result<Attack> {
         if o.otype != "attack-pattern" || o.revoked {
             continue;
         }
-        let Some((id, url)) = o.attack_ref() else { continue };
+        let Some((id, url)) = o.attack_ref() else {
+            continue;
+        };
 
         let tactic_ids: Vec<String> = o
             .kill_chain_phases
@@ -171,19 +175,35 @@ pub fn parse(body: &str) -> anyhow::Result<Attack> {
         });
     }
 
-    Ok(Attack { tactics, techniques })
+    Ok(Attack {
+        tactics,
+        techniques,
+    })
 }
 
 pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let mut stats = CollectStats::default();
     let client = http::default_client()?;
-    let body = client.get(ATTACK_URL).send().await?.error_for_status()?.text().await?;
+    let body = client
+        .get(ATTACK_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     let attack = parse(&body)?;
     stats.fetched = attack.tactics.len() + attack.techniques.len();
 
     for t in &attack.tactics {
-        if let Err(e) =
-            sink::upsert_mitre_tactic(pool, &t.id, &t.name, &t.shortname, &t.description, t.url.as_deref()).await
+        if let Err(e) = sink::upsert_mitre_tactic(
+            pool,
+            &t.id,
+            &t.name,
+            &t.shortname,
+            &t.description,
+            t.url.as_deref(),
+        )
+        .await
         {
             stats.errors += 1;
             tracing::warn!(tactic = %t.id, error = %e, "tactic upsert failed");
@@ -193,7 +213,8 @@ pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     }
 
     // Parents before sub-techniques to satisfy the self-referential FK.
-    let (subs, parents): (Vec<_>, Vec<_>) = attack.techniques.iter().partition(|t| t.is_subtechnique);
+    let (subs, parents): (Vec<_>, Vec<_>) =
+        attack.techniques.iter().partition(|t| t.is_subtechnique);
     for t in parents.iter().chain(subs.iter()) {
         let rec = sink::MitreTechnique {
             id: &t.id,
@@ -214,8 +235,12 @@ pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
         }
     }
 
-    tracing::info!(?stats, tactics = attack.tactics.len(), techniques = attack.techniques.len(),
-        "MITRE ATT&CK collection complete");
+    tracing::info!(
+        ?stats,
+        tactics = attack.tactics.len(),
+        techniques = attack.techniques.len(),
+        "MITRE ATT&CK collection complete"
+    );
     Ok(stats)
 }
 

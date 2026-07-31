@@ -214,7 +214,10 @@ mod tests {
     #[test]
     fn target_kind_mapping() {
         assert_eq!(TargetKind::from_ioc_type("ipv4"), Some(TargetKind::Ip));
-        assert_eq!(TargetKind::from_ioc_type("sha256"), Some(TargetKind::FileHash));
+        assert_eq!(
+            TargetKind::from_ioc_type("sha256"),
+            Some(TargetKind::FileHash)
+        );
         assert_eq!(TargetKind::from_ioc_type("mutex"), None);
     }
 }

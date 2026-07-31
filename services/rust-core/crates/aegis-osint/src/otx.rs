@@ -145,7 +145,9 @@ pub async fn lookup(
     value: &str,
 ) -> anyhow::Result<Option<ProviderVerdict>> {
     let Some(key) = api_key else { return Ok(None) };
-    let Some(url) = section(kind, value) else { return Ok(None) };
+    let Some(url) = section(kind, value) else {
+        return Ok(None);
+    };
     let resp = client.get(&url).header("X-OTX-API-KEY", key).send().await?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);

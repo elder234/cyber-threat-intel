@@ -10,8 +10,8 @@
 //! or shelling out to Trivy happens in the worker (⚠️ RUNTIME VERIFICATION
 //! REQUIRED) and feeds JSON into these parsers.
 
-pub mod finding;
 pub mod dockerfile;
+pub mod finding;
 pub mod image;
 pub mod trivy;
 

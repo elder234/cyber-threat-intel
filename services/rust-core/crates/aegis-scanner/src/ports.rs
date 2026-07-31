@@ -91,7 +91,12 @@ async fn probe(ip: IpAddr, port: u16, cfg: &ScanConfig) -> Option<OpenPort> {
         },
     };
 
-    Some(OpenPort { ip, port, banner, service })
+    Some(OpenPort {
+        ip,
+        port,
+        banner,
+        service,
+    })
 }
 
 /// Read a service banner. For HTTP-like ports, send a minimal request first to

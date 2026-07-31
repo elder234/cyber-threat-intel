@@ -52,7 +52,11 @@ pub fn parse(text: &str) -> Vec<Instruction> {
         let mut parts = joined.splitn(2, char::is_whitespace);
         let verb = parts.next().unwrap_or("").to_ascii_uppercase();
         let args = parts.next().unwrap_or("").trim().to_string();
-        out.push(Instruction { line: start_line, verb, args });
+        out.push(Instruction {
+            line: start_line,
+            verb,
+            args,
+        });
     }
     out
 }
@@ -75,8 +79,15 @@ fn is_mutable_image(image: &str) -> bool {
 fn looks_like_secret(args: &str) -> bool {
     let lower = args.to_ascii_lowercase();
     const KEYS: &[&str] = &[
-        "password", "passwd", "secret", "token", "api_key", "apikey",
-        "access_key", "private_key", "aws_secret",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "access_key",
+        "private_key",
+        "aws_secret",
     ];
     KEYS.iter().any(|k| lower.contains(k))
 }
@@ -97,10 +108,13 @@ pub fn analyze(text: &str) -> Vec<Finding> {
                 if is_mutable_image(&ins.args) {
                     findings.push(
                         Finding::new(
-                            "DKR-IMG-UNPINNED", Category::Dockerfile, Severity::Medium,
+                            "DKR-IMG-UNPINNED",
+                            Category::Dockerfile,
+                            Severity::Medium,
                             "Base image is not pinned to an immutable digest/tag",
                             "Pin the base image to a specific version and ideally a @sha256 digest",
-                        ).at(&loc),
+                        )
+                        .at(&loc),
                     );
                 }
             }
@@ -154,14 +168,20 @@ pub fn analyze(text: &str) -> Vec<Finding> {
                 let a = ins.args.to_ascii_lowercase();
                 // curl|bash style remote code execution.
                 if (a.contains("curl") || a.contains("wget"))
-                    && (a.contains("| sh") || a.contains("|sh") || a.contains("| bash") || a.contains("|bash"))
+                    && (a.contains("| sh")
+                        || a.contains("|sh")
+                        || a.contains("| bash")
+                        || a.contains("|bash"))
                 {
                     findings.push(
                         Finding::new(
-                            "DKR-CURL-PIPE-SH", Category::Dockerfile, Severity::High,
+                            "DKR-CURL-PIPE-SH",
+                            Category::Dockerfile,
+                            Severity::High,
                             "Piping a downloaded script directly into a shell",
                             "Download to a file, verify a checksum/signature, then execute",
-                        ).at(&loc),
+                        )
+                        .at(&loc),
                     );
                 }
                 // sudo inside a build is a smell.
@@ -191,14 +211,18 @@ pub fn analyze(text: &str) -> Vec<Finding> {
 
     if !has_user_nonroot || last_user_root {
         findings.push(Finding::new(
-            "DKR-USER-ROOT", Category::Dockerfile, Severity::High,
+            "DKR-USER-ROOT",
+            Category::Dockerfile,
+            Severity::High,
             "Container runs as root (no non-root USER set)",
             "Add a dedicated non-root user and `USER <name>` before the entrypoint",
         ));
     }
     if !has_healthcheck {
         findings.push(Finding::new(
-            "DKR-NO-HEALTHCHECK", Category::Dockerfile, Severity::Low,
+            "DKR-NO-HEALTHCHECK",
+            Category::Dockerfile,
+            Severity::Low,
             "No HEALTHCHECK instruction",
             "Add a HEALTHCHECK so orchestrators can detect an unhealthy container",
         ));
@@ -266,7 +290,9 @@ mod tests {
     fn flags_secret_env() {
         let df = "FROM alpine:3.19\nENV AWS_SECRET_ACCESS_KEY=abcd1234\nUSER app\n";
         let f = analyze(df);
-        assert!(f.iter().any(|x| x.id == "DKR-SECRET-ENV" && x.severity == Severity::High));
+        assert!(f
+            .iter()
+            .any(|x| x.id == "DKR-SECRET-ENV" && x.severity == Severity::High));
     }
 
     #[test]

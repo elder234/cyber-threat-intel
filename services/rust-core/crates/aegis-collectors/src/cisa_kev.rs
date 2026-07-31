@@ -59,7 +59,13 @@ pub fn parse(body: &str) -> anyhow::Result<KevCatalog> {
 pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let mut stats = CollectStats::default();
     let client = http::default_client()?;
-    let body = client.get(KEV_URL).send().await?.error_for_status()?.text().await?;
+    let body = client
+        .get(KEV_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
     let catalog = parse(&body)?;
     stats.fetched = catalog.vulnerabilities.len();
 

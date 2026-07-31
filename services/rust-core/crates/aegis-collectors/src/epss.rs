@@ -63,7 +63,13 @@ pub async fn collect(pool: &Pool) -> anyhow::Result<CollectStats> {
     let client = http::default_client()?;
     // The endpoint serves a raw .gz file body (not Content-Encoding), so we
     // fetch bytes and gunzip explicitly.
-    let bytes = client.get(EPSS_URL).send().await?.error_for_status()?.bytes().await?;
+    let bytes = client
+        .get(EPSS_URL)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     let text = gunzip(&bytes)?;
     let rows = parse(&text);
     stats.fetched = rows.len();

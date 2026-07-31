@@ -56,7 +56,7 @@ pub fn parse(body: &str) -> anyhow::Result<Option<ProviderVerdict>> {
         }
     };
 
-    let mut tags: Vec<String> = BTreeSet::from_iter(lower.into_iter()).into_iter().collect();
+    let mut tags: Vec<String> = BTreeSet::from_iter(lower).into_iter().collect();
     if !h.ports.is_empty() {
         tags.push(format!("ports:{}", h.ports.len()));
     }
@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn malicious_tag_dominates() {
-        let body = r#"{"ports":[22,80],"tags":["malware","self-signed"],"vulns":["CVE-2021-1234"]}"#;
+        let body =
+            r#"{"ports":[22,80],"tags":["malware","self-signed"],"vulns":["CVE-2021-1234"]}"#;
         let v = parse(body).unwrap().unwrap();
         assert_eq!(v.verdict, Verdict::Malicious);
         assert!(v.confidence >= 0.8);

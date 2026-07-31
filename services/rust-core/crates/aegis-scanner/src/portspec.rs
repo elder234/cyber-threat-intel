@@ -24,6 +24,7 @@ pub const EXTRA_COMMON: &[u16] = &[
 ///  - comma-separated ports:  "22,80,443"
 ///  - ranges:                 "8000-8010"
 ///  - keywords:               "top100", "top1000"
+///
 /// Returns Err on malformed input or out-of-range values.
 pub fn parse_ports(spec: &str) -> anyhow::Result<Vec<u16>> {
     let spec = spec.trim();

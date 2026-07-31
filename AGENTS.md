@@ -19,7 +19,7 @@ Aegis CTI — modular, containerized cyber-threat-intelligence platform.
 
 ## Gotchas
 
-- **No lockfiles are committed** (no `package-lock.json`, no `Cargo.lock`). Use `npm install`, never `npm ci`.
+- **Node lockfiles are NOT committed** (no `package-lock.json`). Use `npm install`, never `npm ci`. `Cargo.lock` (services/rust-core) IS committed — generated with cargo 1.97; regenerate it whenever you change workspace deps (`cargo update`/`cargo generate-lockfile`).
 - **API TS is ESM**: relative imports use explicit `.js` extension (`from './pool.js'`). Match this or tsx/node resolution breaks.
 - **Rust builds set `SQLX_OFFLINE=true`** (Dockerfile, CI) since there is no DB at build time. Crates use runtime `sqlx::query()/query_as()` only — do NOT add compile-time `query!()`/`query_as!()` macros, which need `cargo sqlx prepare` against a live DB (see `services/rust-core/.sqlx/README.md`).
 - **Adding a migration**: drop `NNNN_name.sql` into `db/migrations/`; both `db/migrate.sh` and the API's startup migration runner pick it up automatically (idempotent via `aegis.schema_migrations`). The API Dockerfile copies `db/` → `/db`.

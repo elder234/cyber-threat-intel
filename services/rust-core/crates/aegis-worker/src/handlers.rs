@@ -130,12 +130,11 @@ async fn handle_ioc_enrich(job: &Job, jq: &JobQueue) -> anyhow::Result<()> {
 
     let pool = jq.pool();
     // Fetch the indicator's type + value.
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT type::text, value FROM aegis.iocs WHERE id = $1::uuid",
-    )
-    .bind(&p.ioc_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT type::text, value FROM aegis.iocs WHERE id = $1::uuid")
+            .bind(&p.ioc_id)
+            .fetch_optional(pool)
+            .await?;
 
     let Some((ioc_type, value)) = row else {
         anyhow::bail!("ioc.enrich: no IOC with id {}", p.ioc_id);
@@ -151,7 +150,8 @@ async fn handle_ioc_enrich(job: &Job, jq: &JobQueue) -> anyhow::Result<()> {
     let ioc_uuid = uuid::Uuid::parse_str(&p.ioc_id)
         .map_err(|e| anyhow::anyhow!("ioc.enrich: bad uuid {}: {e}", p.ioc_id))?;
 
-    let rep = aegis_osint::enrich_and_persist(pool, &client, &keys, ioc_uuid, &ioc_type, &value).await?;
+    let rep =
+        aegis_osint::enrich_and_persist(pool, &client, &keys, ioc_uuid, &ioc_type, &value).await?;
     tracing::info!(
         ioc_id = %p.ioc_id,
         score = rep.score,

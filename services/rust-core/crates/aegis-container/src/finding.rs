@@ -173,7 +173,13 @@ mod tests {
 
     #[test]
     fn one_critical_saturates_score() {
-        let f = vec![Finding::new("X", Category::Dockerfile, Severity::Critical, "t", "r")];
+        let f = vec![Finding::new(
+            "X",
+            Category::Dockerfile,
+            Severity::Critical,
+            "t",
+            "r",
+        )];
         let s = summarize(&f);
         assert_eq!(s.score, 75); // 15*100/20 = 75
         assert_eq!(s.critical, 1);
@@ -182,7 +188,15 @@ mod tests {
     #[test]
     fn score_caps_at_100() {
         let f: Vec<Finding> = (0..10)
-            .map(|i| Finding::new(format!("X{i}"), Category::Dockerfile, Severity::Critical, "t", "r"))
+            .map(|i| {
+                Finding::new(
+                    format!("X{i}"),
+                    Category::Dockerfile,
+                    Severity::Critical,
+                    "t",
+                    "r",
+                )
+            })
             .collect();
         let s = summarize(&f);
         assert_eq!(s.score, 100);

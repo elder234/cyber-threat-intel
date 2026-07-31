@@ -3,7 +3,7 @@
 # Build a specific binary:  docker build --build-arg BIN=aegis-worker ...
 # ⚠️ RUNTIME VERIFICATION REQUIRED: not built during authoring (VM unavailable).
 # ─────────────────────────────────────────────────────────────────────────────
-FROM rust:1.79-slim-bookworm AS builder
+FROM rust:1.97-slim-bookworm AS builder
 
 # System deps: rustls needs no OpenSSL, but we keep ca-certificates + pkg-config.
 RUN apt-get update && apt-get install -y --no-install-recommends \
