@@ -89,6 +89,7 @@ jobs:
     needs: [api, rust, frontend]
     steps:
       - uses: actions/checkout@v4
+      - run: cp .env.example .env
       - run: docker compose build
 
   docker-push:
@@ -108,5 +109,6 @@ jobs:
 
       - name: Build and push images
         run: |
+          cp .env.example .env
           docker compose build
           docker compose push
