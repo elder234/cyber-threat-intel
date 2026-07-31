@@ -178,7 +178,7 @@ RETURNS TABLE(
          similarity(m.name, p_q)::real
     FROM aegis.malware_families m
    WHERE m.name % p_q OR p_q = ANY(m.aliases)
-  ORDER BY score DESC NULLS LAST
+  ORDER BY 4 DESC NULLS LAST
   LIMIT p_limit;
 $$ LANGUAGE sql STABLE;
 
