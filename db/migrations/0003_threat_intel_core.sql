@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS aegis.cves (
   -- Affected products as CPE match strings + references
   cpes              text[] NOT NULL DEFAULT '{}',
   cwe_ids           text[] NOT NULL DEFAULT '{}',
-  references         jsonb NOT NULL DEFAULT '[]'::jsonb,
+  cve_references    jsonb NOT NULL DEFAULT '[]'::jsonb,  -- advisory/URL references
   source            text NOT NULL DEFAULT 'nvd',
   raw               jsonb,                             -- original record for re-parse
   created_at        timestamptz NOT NULL DEFAULT now(),
