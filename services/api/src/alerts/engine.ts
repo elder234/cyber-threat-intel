@@ -107,7 +107,12 @@ export class AlertEngine {
         JSON.stringify(event),
       ],
     );
-    const { id: alertId, is_new: isNew } = rows[0];
+    const row = rows[0];
+    if (!row) {
+      this.log.warn({ ruleId: rule.id, title }, 'raise_alert returned no row; skipping notification');
+      return;
+    }
+    const { id: alertId, is_new: isNew } = row;
 
     // Only notify on the first occurrence; deduped repeats stay quiet.
     if (!isNew) return;

@@ -44,7 +44,9 @@ export function validateYara(content: string): RuleValidation {
   const ruleRe = /\brule\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^\{]*)?\{/g;
   const names: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = ruleRe.exec(stripped)) !== null) names.push(m[1]);
+  while ((m = ruleRe.exec(stripped)) !== null) {
+    if (m[1]) names.push(m[1]);
+  }
   if (names.length === 0) {
     return { valid: false, techniqueIds: [], error: 'no `rule <name> { … }` block found' };
   }
@@ -110,7 +112,7 @@ function topLevelYamlKeys(text: string): Set<string> {
   const keys = new Set<string>();
   for (const line of text.split('\n')) {
     const mm = /^([A-Za-z0-9_-]+)\s*:/.exec(line);
-    if (mm) keys.add(mm[1]);
+    if (mm?.[1]) keys.add(mm[1]);
   }
   return keys;
 }
@@ -119,8 +121,9 @@ function topLevelYamlKeys(text: string): Set<string> {
 function scalarValue(text: string, key: string): string | undefined {
   const re = new RegExp(`^${key}\\s*:\\s*(.+)$`, 'm');
   const mm = re.exec(text);
-  if (!mm) return undefined;
-  return mm[1].trim().replace(/^['"]|['"]$/g, '') || undefined;
+  const value = mm?.[1];
+  if (!value) return undefined;
+  return value.trim().replace(/^['"]|['"]$/g, '') || undefined;
 }
 
 /**

@@ -167,8 +167,9 @@ services:
     depends_on:
       api: { condition: service_started }
     ports:
+      # Container nginx listens on 8080 only (unprivileged). TLS is terminated
+      # by the host reverse proxy / Certbot on the VPS, not inside this image.
       - "8080:8080"
-      - "8443:443"
     networks: [aegis]
 
   # ── Aegis analyzer sidecar — Module 9 malware static analysis ─────────────

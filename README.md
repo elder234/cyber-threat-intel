@@ -69,7 +69,6 @@ aegis-cti/
 │           ├── aegis-malware/      # Malware static analysis
 │           └── aegis-analyzer/     # Malware analysis HTTP sidecar
 ├── web/                        # Modules 1/16 — React + TS + Tailwind SOC dashboard
-├── nginx/                      # Reverse proxy config (standalone)
 ├── deploy/
 │   ├── k8s/                    # Kubernetes manifests
 │   └── helm/                   # Helm chart

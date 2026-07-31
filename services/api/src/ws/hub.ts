@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { WebSocket } from 'ws';
 import fastifyWebsocket from '@fastify/websocket';
 import { redisSub } from '../lib/redis.js';
 
@@ -10,7 +11,7 @@ import { redisSub } from '../lib/redis.js';
 export default async function registerWs(app: FastifyInstance): Promise<void> {
   await app.register(fastifyWebsocket);
 
-  const clients = new Set<import('ws').WebSocket>();
+  const clients = new Set<WebSocket>();
 
   // Subscribe once to the Redis events channel and broadcast to all clients.
   await redisSub.connect().catch(() => undefined);
@@ -21,28 +22,28 @@ export default async function registerWs(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get('/ws', { websocket: true }, (conn, req) => {
+  app.get('/ws', { websocket: true }, (socket, req) => {
     // Authenticate: token via query string or Authorization header.
     const token =
       (req.query as { token?: string }).token ??
       (req.headers.authorization?.replace(/^Bearer\s+/i, ''));
     if (!token) {
-      conn.socket.send(JSON.stringify({ type: 'error', message: 'missing token' }));
-      conn.socket.close();
+      socket.send(JSON.stringify({ type: 'error', message: 'missing token' }));
+      socket.close();
       return;
     }
     try {
       app.jwt.verify(token);
     } catch {
-      conn.socket.send(JSON.stringify({ type: 'error', message: 'invalid token' }));
-      conn.socket.close();
+      socket.send(JSON.stringify({ type: 'error', message: 'invalid token' }));
+      socket.close();
       return;
     }
 
-    clients.add(conn.socket);
-    conn.socket.send(JSON.stringify({ type: 'hello', ts: Date.now() }));
+    clients.add(socket);
+    socket.send(JSON.stringify({ type: 'hello', ts: Date.now() }));
 
-    conn.socket.on('close', () => clients.delete(conn.socket));
-    conn.socket.on('error', () => clients.delete(conn.socket));
+    socket.on('close', () => clients.delete(socket));
+    socket.on('error', () => clients.delete(socket));
   });
 }
