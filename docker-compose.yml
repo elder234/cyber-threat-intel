@@ -85,6 +85,7 @@ services:
 
   # ── Node.js API — REST + GraphQL + WS ──────────────────────────────────────
   api:
+    image: ghcr.io/elder234/aegis-cti-api:latest
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -109,6 +110,7 @@ services:
 
   # ── Rust worker — background jobs, feed parsing, IOC processing ─────────────
   worker:
+    image: ghcr.io/elder234/aegis-cti-worker:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
@@ -126,6 +128,7 @@ services:
 
   # ── Rust collectors — OSINT + threat feeds ─────────────────────────────────
   collectors:
+    image: ghcr.io/elder234/aegis-cti-collectors:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
@@ -143,6 +146,7 @@ services:
 
   # ── Rust scanner — network/TLS/HTTP scanning worker ─────────────────────────
   scanner:
+    image: ghcr.io/elder234/aegis-cti-scanner:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
@@ -160,6 +164,7 @@ services:
 
   # ── Web console — React SPA + Nginx reverse proxy ───────────────────────────
   web:
+    image: ghcr.io/elder234/aegis-cti-web:latest
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -174,6 +179,7 @@ services:
 
   # ── Aegis analyzer sidecar — Module 9 malware static analysis ─────────────
   analyzer:
+    image: ghcr.io/elder234/aegis-cti-analyzer:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
