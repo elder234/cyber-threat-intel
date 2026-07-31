@@ -110,12 +110,11 @@ services:
 
   # ── Rust worker — background jobs, feed parsing, IOC processing ─────────────
   worker:
-    image: ghcr.io/elder234/aegis-cti-worker:latest
+    image: ghcr.io/elder234/aegis-cti-rust:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
-      args:
-        BIN: aegis-worker
+    command: ["/usr/local/bin/aegis-worker"]
     restart: unless-stopped
     env_file: [.env]
     environment:
@@ -128,12 +127,11 @@ services:
 
   # ── Rust collectors — OSINT + threat feeds ─────────────────────────────────
   collectors:
-    image: ghcr.io/elder234/aegis-cti-collectors:latest
+    image: ghcr.io/elder234/aegis-cti-rust:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
-      args:
-        BIN: aegis-collectors
+    command: ["/usr/local/bin/aegis-collectors"]
     restart: unless-stopped
     env_file: [.env]
     environment:
@@ -146,12 +144,11 @@ services:
 
   # ── Rust scanner — network/TLS/HTTP scanning worker ─────────────────────────
   scanner:
-    image: ghcr.io/elder234/aegis-cti-scanner:latest
+    image: ghcr.io/elder234/aegis-cti-rust:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
-      args:
-        BIN: aegis-scanner
+    command: ["/usr/local/bin/aegis-scanner"]
     restart: unless-stopped
     env_file: [.env]
     environment:
@@ -179,12 +176,11 @@ services:
 
   # ── Aegis analyzer sidecar — Module 9 malware static analysis ─────────────
   analyzer:
-    image: ghcr.io/elder234/aegis-cti-analyzer:latest
+    image: ghcr.io/elder234/aegis-cti-rust:latest
     build:
       context: ./services/rust-core
       dockerfile: Dockerfile
-      args:
-        BIN: aegis-analyzer
+    command: ["/usr/local/bin/aegis-analyzer"]
     restart: unless-stopped
     environment:
       <<: *common-env

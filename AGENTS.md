@@ -15,7 +15,7 @@ Aegis CTI — modular, containerized cyber-threat-intelligence platform.
 - API (`services/api`): `npm install && npm run dev` (tsx watch, port 8080). Verify with `npm run build` (tsc), `npm test` (vitest). Env comes from repo-root `.env` (copy `.env.example`).
 - Rust (`services/rust-core`): `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`. Build a single binary with `cargo build --release --bin aegis-worker` (same for `aegis-scanner`, `aegis-collectors`, `aegis-analyzer`).
 - Web (`web`): `npm run typecheck`, `npm run lint`, `npm run build`.
-- Full stack: `cp .env.example .env && docker compose up -d --build`. API at `:8080/api/health`, dashboard `:8080`, OpenSearch `:9200`. Rust services use one multi-binary Dockerfile: `docker build --build-arg BIN=aegis-<name> ...`.
+- Full stack: `cp .env.example .env && docker compose up -d --build`. API at `:8080/api/health`, dashboard `:8080`, OpenSearch `:9200`. Rust services build ONE shared image (`ghcr.io/elder234/aegis-cti-rust`) that compiles all four binaries in a single cargo invocation (BuildKit cache mounts); compose selects the binary per service via `command: ["/usr/local/bin/aegis-<name>"]`. Never build the four as separate images — it recompiles the dep tree 4× in parallel and OOMs small VPSes.
 
 ## Gotchas
 
