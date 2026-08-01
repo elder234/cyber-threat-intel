@@ -2,6 +2,28 @@ import pg from 'pg';
 import { config } from '../config.js';
 
 /**
+ * node-postgres returns `numeric`/`decimal` (OID 1700) as a *string* by default,
+ * because Postgres NUMERIC is arbitrary-precision and has no lossless JS
+ * counterpart. Every NUMERIC column in this schema is a bounded score —
+ * cvss_v31_score numeric(3,1), epss_score/epss_percentile numeric(6,5),
+ * entropy — all well inside IEEE-754 exact range, so parsing to float is safe
+ * and matches what the frontend types already declare (`number`).
+ *
+ * Without this, `cvss_v31_score.toFixed(1)` throws "not a function" and takes
+ * down the whole React tree.
+ *
+ * ⚠️ If a true high-precision NUMERIC column is ever added (money, large
+ * counters), give it an explicit cast in its query rather than removing this —
+ * removing it silently re-breaks every score field.
+ */
+pg.types.setTypeParser(pg.types.builtins.NUMERIC, (v) => (v === null ? null : Number.parseFloat(v)));
+
+// int8/bigint (OID 20) has the same class of problem but the opposite tradeoff:
+// it genuinely can exceed Number.MAX_SAFE_INTEGER, so it is deliberately left
+// as a string. Use `::int` or `::float8` in the query when a JS number is
+// wanted — as the count(*)::int in routes/cves.ts already does.
+
+/**
  * Shared PostgreSQL connection pool. All queries run against the `aegis` schema
  * (set via search_path on each new connection).
  */

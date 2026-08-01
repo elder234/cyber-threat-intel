@@ -9,6 +9,23 @@ import type { Cve } from '../lib/types';
 
 const PAGE = 50;
 
+/**
+ * Postgres NUMERIC arrives as a string unless a type parser is registered
+ * (the API sets one in db/pool.ts). These guards keep a stale API build, a
+ * direct DB read, or a future NUMERIC column from throwing
+ * "toFixed is not a function" mid-render.
+ */
+function num(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : Number.parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmt(v: number | string | null | undefined, digits: number): string {
+  const n = num(v);
+  return n === null ? '—' : n.toFixed(digits);
+}
+
 /** CVSS score → color band (mirrors the severity scale). */
 function cvssColor(score: number | null): string {
   if (score === null) return 'text-ink-faint';
@@ -53,12 +70,15 @@ export default function CvesPage(): JSX.Element {
         </div>
       ) },
     { key: 'cvss', header: 'CVSS', width: '70px',
-      cell: (r) => <span className={clsx('data font-bold', cvssColor(r.cvss_v31_score))}>
-        {r.cvss_v31_score?.toFixed(1) ?? '—'}</span> },
+      cell: (r) => <span className={clsx('data font-bold', cvssColor(num(r.cvss_v31_score)))}>
+        {fmt(r.cvss_v31_score, 1)}</span> },
     { key: 'epss', header: 'EPSS', width: '90px',
-      cell: (r) => r.epss_score !== null
-        ? <span className="data text-xs text-ink-dim">{(r.epss_score * 100).toFixed(1)}%</span>
-        : <span className="text-ink-faint">—</span> },
+      cell: (r) => {
+        const e = num(r.epss_score);
+        return e === null
+          ? <span className="text-ink-faint">—</span>
+          : <span className="data text-xs text-ink-dim">{(e * 100).toFixed(1)}%</span>;
+      } },
     { key: 'desc', header: 'Description',
       cell: (r) => <span className="line-clamp-2 text-xs text-ink-dim">{r.description}</span> },
     { key: 'pub', header: 'Published', width: '90px',

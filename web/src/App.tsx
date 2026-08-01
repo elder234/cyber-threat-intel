@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { LiveProvider } from './lib/live';
 import { Shell } from './components/Shell';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spinner } from './components/primitives';
 import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
@@ -33,6 +34,33 @@ function RequireAuth({ children }: { children: JSX.Element }): JSX.Element {
   return children;
 }
 
+/**
+ * The routed pages, wrapped in an error boundary that lives *inside* Shell so a
+ * page crash leaves the nav usable. Keyed on pathname so navigating away from a
+ * broken view clears the error automatically.
+ */
+function RoutedPages(): JSX.Element {
+  const { pathname } = useLocation();
+  return (
+    <ErrorBoundary resetKey={pathname}>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/iocs" element={<IocsPage />} />
+        <Route path="/cves" element={<CvesPage />} />
+        <Route path="/rules" element={<RulesPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/feeds" element={<FeedsPage />} />
+        <Route path="/scans" element={<ScansPage />} />
+        <Route path="/containers" element={<ContainersPage />} />
+        <Route path="/malware" element={<MalwarePage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ErrorBoundary>
+  );
+}
+
 export default function App(): JSX.Element {
   return (
     <Routes>
@@ -43,20 +71,7 @@ export default function App(): JSX.Element {
           <RequireAuth>
             <LiveProvider>
               <Shell>
-                <Routes>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/iocs" element={<IocsPage />} />
-                  <Route path="/cves" element={<CvesPage />} />
-                  <Route path="/rules" element={<RulesPage />} />
-                  <Route path="/alerts" element={<AlertsPage />} />
-                  <Route path="/notifications" element={<NotificationsPage />} />
-                  <Route path="/feeds" element={<FeedsPage />} />
-                  <Route path="/scans" element={<ScansPage />} />
-                  <Route path="/containers" element={<ContainersPage />} />
-                  <Route path="/malware" element={<MalwarePage />} />
-                  <Route path="/search" element={<SearchPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
+                <RoutedPages />
               </Shell>
             </LiveProvider>
           </RequireAuth>
