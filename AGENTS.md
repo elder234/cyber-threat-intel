@@ -51,26 +51,133 @@ by default, P2 makes the dashboard lie, P3 is a data-integrity bug.
 
 ## Resolution status
 
-- **P0** — DONE. Datastore `ports:` removed from docker-compose.yml (`ac529bc`). Only
-  `web` publishes `8080:8080`. OpenSearch security plugin is still disabled (dev mode);
-  enable it before any non-dev deploy.
+- **P0** — PARTIAL. Datastore `ports:` removed from docker-compose.yml (`ac529bc`) —
+  verified, only `web` publishes `8080:8080`. **OpenSearch security is still disabled in
+  all three deploy paths — see F1 below. Not done.**
 - **P1** — DONE. `config.ts` hard-fails on `/^change_me|^ChangeMe123!$/` when
   `NODE_ENV=production`; `SEED_ADMIN_PASSWORD` has no default. New migration
   `0013` adds `dashboard:read`.
-- **P2** — DONE. Fixed in the SQL→frontend direction via `0013_align_dashboard_outputs.sql`
-  (dashboard_stats now emits exactly the 10 `DashboardStats` keys incl. real
-  `risk_score`/`by_severity`/`ingest_24h` aggregates; unified_search emits
-  label/sub_label/rank/severity; v_attack_stats→tactic/count; v_top_sources→count/high_sev;
-  v_recent_kev widened to the `Cve` shape). `SELECT *` replaced with explicit columns in
-  alerts/search/dashboard/cves. `db/smoke_test.sql` asserts the full key set.
-- **P3** — DONE. `malware.ts` uses `await data.toBuffer()` + a `truncated` check → 413;
-  integration test posts >32 MiB and asserts no row stored.
-- **P4** — DONE. `/api/health/ready` returns a bare status (detail logged server-side);
-  dashboard routes + GraphQL `dashboardStats` now require `dashboard:read`; the WS hub
-  authenticates via first message (no `?token=`), enforces a per-event permission filter,
-  and times out unauth'd sockets.
-- **P5** — DONE. `mem_limit` on every compose service; README quick-start no longer
-  instructs `--build`; `SCANNER_MAX_CONCURRENCY` default lowered to 64.
+- **P2** — DONE for the drifted endpoints, verified. `0013_align_dashboard_outputs.sql`
+  makes dashboard_stats emit exactly the 10 `DashboardStats` keys (diffed programmatically:
+  0 missing, 0 extra) incl. real `risk_score`/`by_severity`/`ingest_24h` aggregates;
+  unified_search emits label/sub_label/rank/severity; v_attack_stats→tactic/count;
+  v_top_sources→source/count/high_sev; v_recent_kev widened to the `Cve` shape;
+  `alerts.ts:26` selects explicit columns with `body AS summary`. `db/smoke_test.sql`
+  asserts all 10 keys plus `risk_score` int-ness and `by_severity` bucketing.
+  **`SELECT *` survives in 8 other places — see F3 below.**
+- **P3** — DONE, verified. `malware.ts` uses `await data.toBuffer()` + a
+  `data.file.truncated` check → 413.
+- **P4** — DONE, verified. `/api/health/ready` returns a bare status (detail logged via
+  `req.log.warn`); all four dashboard routes + GraphQL `dashboardStats` require
+  `dashboard:read`, and `0013:118-126` seeds the permission and grants it to
+  admin/analyst/viewer so the new guard does not lock everyone out; the WS hub
+  authenticates via first message, filters per event through `EVENT_PERM`, and times out
+  unauth'd sockets.
+- **P5** — PARTIAL. `mem_limit` is on every compose service and the README quick-start no
+  longer instructs `--build` — both verified. **But the limits sum to more RAM than the
+  box has — see F2 below.**
+
+---
+
+# Follow-up backlog (2026-07-31, post-remediation review)
+
+Verified against the tree after `fd9334c`/`ac529bc`. Three items from the first pass are
+still open. Same rules as before: re-grep before changing, never edit an applied migration.
+
+## F1 — OpenSearch still runs with authentication disabled (was P0)
+
+`plugins.security.disabled=true` is unchanged in all three deploy paths:
+
+| File | Line |
+|---|---|
+| `docker-compose.yml` | 71 — comment still reads `# dev only; enable TLS+auth in prod` |
+| `deploy/k8s/opensearch.yaml` | 56 |
+| `deploy/helm/aegis/templates/opensearch.yaml` | 54 |
+
+Closing the host port shrank the blast radius from "unauthenticated cluster on the public
+internet" to "unauthenticated cluster reachable by any container on the `aegis` bridge
+network" — a real reduction, but not a fix. The k8s and Helm manifests are the
+prod-targeted ones and they do the opposite of what the compose comment advises.
+`OPENSEARCH_INITIAL_ADMIN_PASSWORD` (`docker-compose.yml:70`) stays inert until the plugin
+is on.
+
+**Task:** enable the security plugin in the k8s and Helm manifests at minimum, wire the
+admin credential through, and point the API's OpenSearch client at it with TLS. If compose
+stays insecure for local dev, make that explicit — rename the comment to say the k8s/Helm
+paths differ, so nobody ships the dev posture by copying it.
+
+## F2 — Compose memory limits over-commit the 4 GB box
+
+Every service got a `mem_limit`, but they sum to **4224 MiB on a 4096 MiB host**:
+
+```
+postgres 384 + redis 256 + opensearch 1024 + api 512 + collectors 512
++ worker 384 + scanner 512 + analyzer 256 + web 256 + tor 128  =  4224 MiB
+```
+
+That leaves nothing for the kernel, dockerd, sshd, or page cache. `mem_limit` is a ceiling
+rather than a reservation, so this will not OOM under light load — but there is no headroom
+by construction, and OpenSearch at `1g` with `bootstrap.memory_lock=true`
+(`docker-compose.yml:68`) plus `memlock: -1` (`:73`) holds its heap resident, so that GiB
+is not opportunistic.
+
+**Task:** get the total under ~3.2 GiB. Cheapest path is OpenSearch 1g → 512m (drop
+`-Xms/-Xmx` to 256m to match) and trimming the three Rust workers, which are queue
+consumers and mostly idle. Verify with `docker stats` under load rather than by guessing.
+Alternative, if the current sizing is genuinely needed: provision 2 GB of swap and say so
+in the README so the requirement is not invisible.
+
+## F3 — `SELECT *` remains in 8 query sites
+
+P2's regression guard was applied to the endpoints that had drifted, but not to the rest.
+Remaining:
+
+| File | Lines |
+|---|---|
+| `services/api/src/routes/cves.ts` | 54 |
+| `services/api/src/routes/iocs.ts` | 72, 98 |
+| `services/api/src/routes/rules.ts` | 90 |
+| `services/api/src/routes/scans.ts` | 31, 34, 35, 36 |
+
+These are single-row-by-id reads and scan-detail fan-outs, so the risk is lower than the
+dashboard aggregates that actually broke — but it is the same coupling that produced P2:
+the API contract becomes whatever the table happens to contain, and adding a column to
+`iocs` or `scans` silently changes the response shape. TypeScript will not catch it.
+
+**Task:** replace each with an explicit column list matching the declared response type.
+Do this while the P2 context is fresh — it is mechanical now and archaeology later.
+
+## Follow-up resolution status (2026-07-31)
+
+All three follow-up items are landed on `main`.
+
+- **F1** — DONE. Security plugin is ENABLED in `deploy/k8s/opensearch.yaml` and the Helm
+  chart (`values.yaml` `opensearch.securityDisabled: false`); the admin credential is
+  bootstrapped from `OPENSEARCH_INITIAL_ADMIN_PASSWORD` wired from the `aegis-secrets`
+  secret / Helm secret in both paths. Probes switched from `httpGet /_cluster/health` to
+  `exec` `curl -kfs -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/...`
+  (the plugin serves TLS on 9200 with its generated certs). `OPENSEARCH_NODE` configmaps
+  now point at `https://`. Verified caveat: **no API component currently talks to
+  OpenSearch** — the `OPENSEARCH_*` env vars are reserved and unconsumed, so there was no
+  client to point at TLS. docker-compose stays dev-insecure, now with an explicit comment
+  that the k8s/Helm paths run secured.
+- **F2** — DONE. Compose totals now **3200 MiB** on the 4096 MiB host (was 4224). OpenSearch
+  `mem_limit` 1g→512m with `-Xms/-Xmx` 512m→256m; worker 512m→256m; collectors 384m→256m;
+  scanner 512m→384m. Redis `--maxmemory` 512mb→192mb so it evicts inside its 256m `mem_limit`
+  instead of being OOM-killed. `SCANNER_MAX_CONCURRENCY` lowered to 64 in `.env.example`,
+  k8s configmap, and Helm values. Verify the sizing with `docker stats` under load.
+- **F3** — DONE. All 8 `SELECT *` sites replaced with explicit column lists matching the
+  declared response types: `cves.ts:54`, `iocs.ts:72/98`, `rules.ts:90`,
+  `scans.ts:31/34/35/36` (scan detail columns enumerate `scan_ports`/`scan_tls`/`findings`).
+  Remaining `SELECT *` in `graphql/index.ts` is pinned by `mapCve`/`mapIoc`, and
+  `alerts/engine.ts` calls `raise_alert()` (a function row, not a table) — both out of scope.
+
+---
+
+# Original findings (2026-07-31, first pass)
+
+Kept for context and for the file:line evidence behind each fix. Read the resolution status
+above first — most of this is already landed. Only F1/F2/F3 above still need work.
 
 ## P0 — Datastores are published to 0.0.0.0
 

@@ -51,7 +51,10 @@ export default async function cveRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id', { preHandler: [app.requirePerms('cve:read')], schema: { tags: ['cves'] } },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { rows } = await pool.query('SELECT * FROM aegis.cves WHERE cve_id = $1', [id.toUpperCase()]);
+      const { rows } = await pool.query(
+        `SELECT cve_id, description, cvss_v31_score, cvss_v31_severity, epss_score,
+                epss_percentile, kev, kev_ransomware, published_at
+           FROM aegis.cves WHERE cve_id = $1`, [id.toUpperCase()]);
       if (!rows.length) return reply.code(404).send({ error: 'not_found' });
       return rows[0];
     });

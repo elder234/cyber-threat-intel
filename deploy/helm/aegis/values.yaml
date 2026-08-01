@@ -54,9 +54,9 @@ opensearch:
   storage:
     size: 20Gi
     storageClassName: ""
-  javaOpts: "-Xms512m -Xmx512m"
+  javaOpts: "-Xms256m -Xmx256m"
   password: change_me_opensearch
-  securityDisabled: true
+  securityDisabled: false
   resources:
     requests:
       cpu: 500m
@@ -184,7 +184,7 @@ config:
   rateLimitMax: "300"
   rateLimitWindow: "60"
   workerConcurrency: "8"
-  scannerMaxConcurrency: "512"
+  scannerMaxConcurrency: "64"
   scannerRatePps: "2000"
   seedAdminEmail: "admin@aegis.local"
   alertsEnabled: "true"

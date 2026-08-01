@@ -51,6 +51,9 @@ spec:
               value: "true"
             - name: OPENSEARCH_JAVA_OPTS
               value: {{ .Values.opensearch.javaOpts | quote }}
+            # Security plugin enabled by default (values.yaml securityDisabled:
+            # false). TLS on 9200 + auth required; probes authenticate as admin
+            # with the bootstrapped OPENSEARCH_INITIAL_ADMIN_PASSWORD.
             - name: plugins.security.disabled
               value: {{ .Values.opensearch.securityDisabled | quote }}
             - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
@@ -59,17 +62,27 @@ spec:
                   name: {{ include "aegis.fullname" . }}-secrets
                   key: OPENSEARCH_PASSWORD
           readinessProbe:
+            {{- if .Values.opensearch.securityDisabled }}
             httpGet:
               path: /_cluster/health
               port: 9200
+            {{- else }}
+            exec:
+              command: ["/bin/sh", "-c", "curl -kfs -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health"]
+            {{- end }}
             initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 15
           livenessProbe:
+            {{- if .Values.opensearch.securityDisabled }}
             httpGet:
               path: /_cluster/health
               port: 9200
+            {{- else }}
+            exec:
+              command: ["/bin/sh", "-c", "curl -kfs -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health"]
+            {{- end }}
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5

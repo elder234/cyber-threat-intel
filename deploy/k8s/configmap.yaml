@@ -21,8 +21,9 @@ data:
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
 
-  # OpenSearch
-  OPENSEARCH_NODE: "http://opensearch:9200"
+  # OpenSearch (security plugin enabled in k8s/Helm; TLS on 9200).
+  # No component consumes these yet — reserved for future search/indexing work.
+  OPENSEARCH_NODE: "https://opensearch:9200"
   OPENSEARCH_USERNAME: "admin"
   OPENSEARCH_INDEX_PREFIX: "aegis"
 
@@ -42,7 +43,7 @@ data:
 
   # Rust services
   WORKER_CONCURRENCY: "8"
-  SCANNER_MAX_CONCURRENCY: "512"
+  SCANNER_MAX_CONCURRENCY: "64"
   SCANNER_RATE_PPS: "2000"
 
   # Analyzer

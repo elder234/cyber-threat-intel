@@ -16,7 +16,7 @@ data:
   POSTGRES_USER: {{ .Values.postgres.user | quote }}
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  OPENSEARCH_NODE: "http://opensearch:9200"
+  OPENSEARCH_NODE: "https://opensearch:9200"
   OPENSEARCH_USERNAME: "admin"
   OPENSEARCH_INDEX_PREFIX: "aegis"
   API_HOST: {{ .Values.config.apiHost | quote }}

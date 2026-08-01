@@ -52,26 +52,25 @@ spec:
             - name: bootstrap.memory_lock
               value: "true"
             - name: OPENSEARCH_JAVA_OPTS
-              value: "-Xms512m -Xmx512m"
-            - name: plugins.security.disabled
-              value: "true"
+              value: "-Xms256m -Xmx256m"
+            # Security plugin is ENABLED (default): TLS on 9200 + auth required.
+            # The admin password is bootstrapped from OPENSEARCH_INITIAL_ADMIN_PASSWORD
+            # on first start, so probes authenticate as admin with that value.
             - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: aegis-secrets
                   key: OPENSEARCH_PASSWORD
           readinessProbe:
-            httpGet:
-              path: /_cluster/health
-              port: 9200
+            exec:
+              command: ["/bin/sh", "-c", "curl -kfs -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health"]
             initialDelaySeconds: 30
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 15
           livenessProbe:
-            httpGet:
-              path: /_cluster/health
-              port: 9200
+            exec:
+              command: ["/bin/sh", "-c", "curl -kfs -u admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health"]
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5

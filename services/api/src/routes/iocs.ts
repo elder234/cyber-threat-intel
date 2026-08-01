@@ -69,7 +69,10 @@ export default async function iocRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id', { preHandler: [app.requirePerms('ioc:read')], schema: { tags: ['iocs'] } },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { rows } = await pool.query('SELECT * FROM aegis.iocs WHERE id = $1', [id]);
+      const { rows } = await pool.query(
+        `SELECT id, type, value, severity, confidence, tlp, score, is_active, tags, source,
+                first_seen, last_seen, expires_at
+           FROM aegis.iocs WHERE id = $1`, [id]);
       if (!rows.length) return reply.code(404).send({ error: 'not_found' });
       const { rows: sightings } = await pool.query(
         'SELECT source, context, observed_at FROM aegis.ioc_sightings WHERE ioc_id = $1 ORDER BY observed_at DESC LIMIT 100',
@@ -95,7 +98,10 @@ export default async function iocRoutes(app: FastifyInstance): Promise<void> {
       }
       await audit(req, { action: 'ioc.create', resource: 'ioc', resourceId: id, metadata: { type: b.type } });
       await publish('events', { type: 'ioc.new', id, severity: b.severity, value: b.value });
-      const { rows: created } = await pool.query('SELECT * FROM aegis.iocs WHERE id = $1', [id]);
+      const { rows: created } = await pool.query(
+        `SELECT id, type, value, severity, confidence, tlp, score, is_active, tags, source,
+                first_seen, last_seen, expires_at
+           FROM aegis.iocs WHERE id = $1`, [id]);
       return reply.code(201).send(created[0]);
     });
 

@@ -87,7 +87,10 @@ export default async function ruleRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id', { preHandler: [app.requirePerms('rule:read')], schema: { tags: ['rules'] } },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { rows } = await pool.query('SELECT * FROM aegis.detection_rules WHERE id = $1', [id]);
+      const { rows } = await pool.query(
+        `SELECT id, format, name, rule_id_ext, content, description, author, severity, status,
+                tags, technique_ids, is_enabled, is_valid, validation_error, created_at, updated_at
+           FROM aegis.detection_rules WHERE id = $1`, [id]);
       if (!rows.length) return reply.code(404).send({ error: 'not_found' });
       return rows[0];
     });

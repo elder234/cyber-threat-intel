@@ -28,12 +28,23 @@ export default async function scanRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id', { preHandler: [app.requirePerms('scan:read')], schema: { tags: ['scans'] } },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { rows } = await pool.query('SELECT * FROM aegis.scans WHERE id = $1', [id]);
+      const { rows } = await pool.query(
+        `SELECT id, target, scan_type, status, progress, started_at, finished_at, created_at
+           FROM aegis.scans WHERE id = $1`, [id]);
       if (!rows.length) return reply.code(404).send({ error: 'not_found' });
       const [{ rows: ports }, { rows: tls }, { rows: findings }] = await Promise.all([
-        pool.query('SELECT * FROM aegis.scan_ports WHERE scan_id = $1 ORDER BY port', [id]),
-        pool.query('SELECT * FROM aegis.scan_tls WHERE scan_id = $1', [id]),
-        pool.query('SELECT * FROM aegis.findings WHERE scan_id = $1 ORDER BY severity DESC', [id]),
+        pool.query(
+          `SELECT id, scan_id, ip, port, protocol, state, service, product, version, banner, cpe, created_at
+             FROM aegis.scan_ports WHERE scan_id = $1 ORDER BY port`, [id]),
+        pool.query(
+          `SELECT id, scan_id, host, port, tls_versions, cipher_suites, cert_subject, cert_issuer,
+                  cert_serial, san, not_before, not_after, is_expired, is_self_signed, sha256_fp,
+                  weak_findings, created_at
+             FROM aegis.scan_tls WHERE scan_id = $1`, [id]),
+        pool.query(
+          `SELECT id, scan_id, asset_id, category, title, description, severity, cve_id, evidence,
+                  remediation, status, created_at, updated_at
+             FROM aegis.findings WHERE scan_id = $1 ORDER BY severity DESC`, [id]),
       ]);
       return { ...rows[0], ports, tls, findings };
     });
