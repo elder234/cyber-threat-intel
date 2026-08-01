@@ -68,11 +68,17 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
-      - "OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD:-change_me_opensearch}"
       # Security plugin OFF here for local dev ONLY. The k8s and Helm deploy
       # paths run it enabled (auth + TLS on 9200). Do not copy this dev posture
       # to a production deployment.
-      - plugins.security.disabled=true
+      # DISABLE_SECURITY_PLUGIN is the docker-entrypoint's documented switch for
+      # the docker image: it disables the plugin from the start AND skips
+      # install_demo_configuration.sh (the old dotted plugins.security.disabled
+      # env only disabled it AFTER that installer ran — a second JVM,
+      # securityadmin.sh, that blows past the 512m mem_limit). The PA agent is
+      # also unused, so drop it too.
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
