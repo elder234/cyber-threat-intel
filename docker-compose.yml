@@ -5,10 +5,11 @@
 # ZERO host ports are published. The dashboard is reached ONLY through the
 # Cloudflare Tunnel (cloudflared service) at https://yourdomain.com — the VPS
 # makes outbound connections only. One-time setup (see README):
-#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
-#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel login
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel create aegis
 #   cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml   # fill UUID + domain
-#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+# (the image runs as `nonroot`; if writes fail with permission denied, chmod 777 deploy/cloudflared first)
 # ─────────────────────────────────────────────────────────────────────────────
 name: aegis-cti
 
@@ -203,10 +204,10 @@ services:
   # cloudflared dials OUT to the Cloudflare edge; yourdomain.com is served by
   # Cloudflare on 443 with a browser-trusted cert. The VPS has no open inbound
   # ports at all (egress-only). One-time setup from the repo root:
-  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
-  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel login
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel create aegis
   #   cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml  # fill UUID + domain
-  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
   # Put the public hostname behind a Cloudflare Access application so the
   # dashboard is not open to anyone who reaches the domain (the app's own JWT
   # login is the second layer).
@@ -214,7 +215,7 @@ services:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     mem_limit: 64m
-    command: tunnel --no-autoupdate run --config /etc/cloudflared/config.yml
+    command: tunnel --config /etc/cloudflared/config.yml --no-autoupdate run
     volumes:
       - ./deploy/cloudflared:/etc/cloudflared:ro
     depends_on:

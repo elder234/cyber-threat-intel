@@ -4,17 +4,22 @@
 # that the compose `cloudflared` service uses):
 #
 #   1. Log in and authorize the VPS with your Cloudflare account:
-#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
+#        chmod 777 deploy/cloudflared   # only if "permission denied" below
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel login
 #      (opens a browser URL — authorize there; cert.pem is written to this dir)
 #
 #   2. Create the tunnel (prints a UUID, writes <uuid>.json here):
-#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel create aegis
 #
 #   3. Point your domain at Cloudflare (nameservers at your registrar), then add
 #      the DNS route so the hostname resolves to this tunnel:
-#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
 #
 #   4. docker compose up -d
+#
+# The image runs as the `nonroot` user (home = /home/nonroot), hence the mount
+# target. Mounting as root and writing 0600 files would lock the compose service
+# (also nonroot) out of the credentials.
 #
 # Cloudflare terminates TLS on 443 with a browser-trusted cert. Add the public
 # hostname as a Cloudflare Access application (email / mTLS / SSO login) so the

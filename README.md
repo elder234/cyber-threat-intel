@@ -83,8 +83,8 @@ git clone <repo> aegis-cti && cd aegis-cti
 cp .env.example .env            # then edit secrets & API keys
 # Cloudflare Tunnel — zero open ports: the VPS dials OUT, Cloudflare serves your
 # domain on 443. One-time setup (same docker image the compose service uses):
-docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
-docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel login
+docker run --rm -it -v "$PWD/deploy/cloudflared:/home/nonroot/.cloudflared" cloudflare/cloudflared tunnel create aegis
 cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml   # fill UUID + domain
 docker compose up -d            # pulls prebuilt ghcr.io images (no build on the box)
 #   Dashboard:  https://yourdomain.com    (put the hostname behind Cloudflare Access)
