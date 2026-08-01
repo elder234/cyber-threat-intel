@@ -13,5 +13,6 @@ pub mod ports;
 pub mod portspec;
 pub mod service;
 pub mod tls;
+pub mod web;
 
 pub use portspec::parse_ports;

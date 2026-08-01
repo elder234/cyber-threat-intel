@@ -12,11 +12,12 @@
 
 import type {
   Alert, AlertStatus, Cve, DashboardStats, Feed, Ioc, LoginResponse, Paged,
-  Scan, SearchResult, Severity, TimelineEvent, AttackStat, TopSource, AuthUser,
+  Scan, ScanFinding, SearchResult, Severity, TimelineEvent, AttackStat, TopSource, AuthUser,
   DetectionRule, RuleFormat, RuleStatus, RuleValidation,
   NotificationChannel, ChannelType, AlertRule, AlertRuleEventType,
   AlertRuleConditions, ChannelTestResult,
   ContainerAudit, ContainerAuditDetail, ContainerAuditKind,
+  WatchEntry, WatchKind, DarkwebSource, DarkwebHit, DarkwebHitStatus,
 } from './types';
 
 const REFRESH_KEY = 'aegis.refresh';
@@ -253,7 +254,7 @@ export const api = {
 
   scans: {
     list: (limit = 50) => request<{ data: Scan[] }>('/scans', { query: { limit } }),
-    get: (id: string) => request<Scan & { ports: unknown[]; tls: unknown[]; findings: unknown[] }>(`/scans/${id}`),
+    get: (id: string) => request<Scan & { ports: unknown[]; tls: unknown[]; findings: ScanFinding[] }>(`/scans/${id}`),
     create: (body: { target: string; scanType?: string; assetId?: string; profile?: Record<string, unknown> }) =>
       request<{ id: string; status: string }>('/scans', { method: 'POST', body }),
   },
@@ -289,5 +290,20 @@ export const api = {
         });
     },
     remove: (id: string) => request<void>(`/malware/samples/${id}`, { method: 'DELETE' }),
+  },
+
+  darkweb: {
+    watchlist: () => request<{ data: WatchEntry[] }>('/darkweb/watchlist'),
+    addWatch: (body: {
+      kind: WatchKind; value: string; label?: string; severity?: Severity; enabled?: boolean;
+    }) => request<WatchEntry>('/darkweb/watchlist', { method: 'POST', body }),
+    updateWatch: (id: string, body: Partial<{
+      kind: WatchKind; value: string; label: string; severity: Severity; enabled: boolean;
+    }>) => request<WatchEntry>(`/darkweb/watchlist/${id}`, { method: 'PATCH', body }),
+    removeWatch: (id: string) => request<void>(`/darkweb/watchlist/${id}`, { method: 'DELETE' }),
+    sources: () => request<{ data: DarkwebSource[] }>('/darkweb/sources'),
+    hits: (limit = 100) => request<{ data: DarkwebHit[] }>('/darkweb/hits', { query: { limit } }),
+    triageHit: (id: string, status: DarkwebHitStatus) =>
+      request<{ id: string; status: DarkwebHitStatus }>(`/darkweb/hits/${id}`, { method: 'PATCH', body: { status } }),
   },
 };

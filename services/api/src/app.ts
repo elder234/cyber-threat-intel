@@ -22,6 +22,7 @@ import feedRoutes from './routes/feeds.js';
 import scanRoutes from './routes/scans.js';
 import containerRoutes from './routes/container.js';
 import malwareRoutes from './routes/malware.js';
+import darkwebRoutes from './routes/darkweb.js';
 import healthRoutes from './routes/health.js';
 import registerWs from './ws/hub.js';
 import registerGraphql from './graphql/index.js';
@@ -72,6 +73,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         { name: 'dashboard' }, { name: 'alerts' }, { name: 'feeds' }, { name: 'scans' },
         { name: 'container' },
         { name: 'malware' },
+        { name: 'darkweb' },
         { name: 'system' },
       ],
     },
@@ -95,6 +97,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(scanRoutes, { prefix: '/api/scans' });
   await app.register(containerRoutes, { prefix: '/api/container' });
   await app.register(malwareRoutes, { prefix: '/api/malware' });
+  await app.register(darkwebRoutes, { prefix: '/api/darkweb' });
 
   // ── GraphQL + WebSockets ───────────────────────────────────────────────────
   await registerGraphql(app);

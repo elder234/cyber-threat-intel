@@ -8,6 +8,7 @@
 //! defensive use (CISA, FIRST.org EPSS, abuse.ch). No authentication is bypassed.
 
 pub mod cisa_kev;
+pub mod darkweb;
 pub mod epss;
 pub mod feodo;
 pub mod http;

@@ -39,7 +39,7 @@ Aegis CTI — modular, containerized cyber-threat-intelligence platform.
 
 ## Verification status
 
-API (`npm run build`) and web (`typecheck`/`build`/`lint`) are verified green and API unit tests pass (43/43). Rust is still unverified — no toolchain available yet. First Rust compile may still hit dependency-version drift (e.g. rustls 0.23 / x509-parser API shapes). READMEs still carry "⚠️ RUNTIME VERIFICATION REQUIRED" markers; don't assume the full stack has run end-to-end.
+API (`npm run build`) and web (`typecheck`/`build`/`lint`) are verified green and API unit tests pass (43/43). Rust compiles and its gates are green locally: `cargo test --workspace` (155 tests), `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`. The many `⚠️ RUNTIME VERIFICATION REQUIRED` markers still stand — they flag network/socket/DB paths unit tests cannot exercise (sockets, TLS handshakes, Tor fetches, live DB writes); don't assume the full stack has run end-to-end.
 
 ## Tests
 
@@ -446,3 +446,182 @@ defaults `SCANNER_MAX_CONCURRENCY=512`, `SCANNER_RATE_PPS=2000`, `WORKER_CONCURR
   half the endpoints one way and half the other.
 - Rust remains unverified end-to-end (see Verification status above); a first compile may
   surface dependency drift unrelated to anything here.
+
+---
+
+# Feature backlog (2026-07-31) — Dark-web monitor + deep web payload inspection
+
+Two new capabilities. Both extend existing subsystems rather than adding new services, and
+both are **safety-gated** — read the Ground rules at the end of this section before writing
+any network code. Decisions already made by the operator (do not re-litigate):
+
+- Web inspection depth: **active DAST** (benign, non-destructive probes), layered on top of
+  a passive fingerprint pass that discovers where to probe.
+- Dark-web sources: **Tor-routed curated sources** (leak/paste/forum pages), read-only.
+- Target authorization: **reuse the existing `aegis.assets.is_authorized = true` gate** —
+  the same gate `aegis-scanner` already enforces (`crates/aegis-scanner/src/main.rs:101-112`).
+  No new authorization model.
+
+Build order: **F-DAST before F-DARKWEB** — DAST reuses the scanner path you already know,
+darkweb touches Tor and needs the most safety review. Within each feature, do the DB
+migration and the passive/read-only stage first, wire it end-to-end to the UI, and only
+then add the active/expanding stage.
+
+## Existing anchors (verified — build on these, don't reinvent)
+
+- **Authorization gate**: `aegis-scanner` refuses to scan a registered asset unless
+  `assets.is_authorized = true` (`crates/aegis-scanner/src/main.rs:101-112`,
+  `mark_scan_failed` on refusal). The `assets` table is `db/migrations/0005_assets_scans.sql:7`;
+  `kind IN ('host','domain','cidr','url','asn')` already includes `url`.
+- **Scan/findings storage**: `aegis.scans` (`0005:24`, `scan_type` is a free text tag —
+  'port','tls','http','subdomain','full'), `aegis.findings` (`0005:88`) already has exactly
+  the columns DAST output needs: `category`, `title`, `severity`, `cve_id` (FK to `cves`),
+  `evidence jsonb`, `remediation`, `status`. **Reuse `findings` — do not add a parallel table.**
+- **Job queues**: scanner consumes the `scanner` queue (`aegis-scanner/src/main.rs:16`
+  `const QUEUE = "scanner"`); collectors consume `collectors`. Enqueue via
+  `aegis.enqueue_job($kind,$queue,$payload,...)` (`aegis-common/src/jobs.rs:79-87`). The API
+  enqueues scans from `services/api/src/routes/scans.ts` (gated by `scan:run`).
+- **Tor**: SOCKS proxy already in compose as `tor` service behind `--profile tor`
+  (`docker-compose.yml:204`), read from Rust via `config.tor_socks_proxy`
+  (`aegis-common/src/config.rs:12,41`, env `TOR_SOCKS_PROXY`). **The dark-web collector must
+  route every request through this proxy — never make a clearnet request to an onion or a
+  leak site.**
+- **Next migration number is `0014`** (highest applied is `0013_align_dashboard_outputs.sql`).
+- **Alerts**: matches should raise alerts through the existing alert engine (Module 11) so
+  they surface on the dashboard and notification channels, not a bespoke path.
+- **CVE correlation**: `scan_ports.product`/`version`/`cpe` (`0005:52-56`) already capture
+  service versions; the CVE DB is synced (`cves` table). Version→CVE matching is a stated
+  goal of the passive pass.
+
+## F-DAST — Deep web payload inspection + vulnerable-port correlation
+
+Extends `aegis-scanner`. Adds a web-application inspection scan type that (1) passively
+fingerprints a target, (2) correlates discovered service versions against the CVE DB, and
+(3) sends benign active DAST probes to discovered injection points. **Active probes only run
+against an asset with `is_authorized = true`** — enforce the same gate the port scanner uses,
+in the same place, before any probe traffic.
+
+### F-DAST.1 — Migration `0014_web_inspection.sql`
+
+- Add a scan_type value convention `'web'` (scan_type is free text, no enum change needed;
+  just document it).
+- New table `aegis.web_findings` **only if** `findings.evidence jsonb` proves insufficient —
+  first attempt should map onto `findings` with `category IN
+  ('fingerprint','version_cve','xss','sqli','path_traversal','open_redirect','header','cookie')`
+  and structured `evidence` (request, param, payload, response marker, confidence). Prefer
+  reuse; adding a table is a fallback, and if you add one, add a new migration, never edit 0005.
+- Add a `web_probe_policy` seed row or config documenting which probe classes are enabled and
+  their payload catalog version, so a scan records what it was allowed to do.
+
+### F-DAST.2 — Passive fingerprint + version→CVE (do this first, no attack traffic)
+
+New module `crates/aegis-scanner/src/web/fingerprint.rs`:
+- Fetch the target over HTTP(S) using the existing client; capture status, headers, cookies,
+  body. Detect server/framework/CMS from headers, cookie names, meta tags, and known paths
+  (a small static signature table, not a network wordlist bust).
+- Reuse `http_headers::analyze` (already exists) for header findings.
+- Map detected `product`+`version` to `cpe`, then query `aegis.cves` for matching CVEs and
+  write `findings` rows with `category='version_cve'`, `cve_id` set, severity from the CVE.
+- This stage is safe against any reachable host and is the discovery input for F-DAST.3.
+
+### F-DAST.3 — Active DAST probes (gated, benign, non-destructive)
+
+New module `crates/aegis-scanner/src/web/probes.rs`:
+- **Gate first**: assert `is_authorized = true` for the asset before sending a single probe;
+  reuse the exact check at `aegis-scanner/src/main.rs:101-112`. Ad-hoc URL targets require
+  the operator-asserts path AND the `scan:run` permission, logged.
+- Probe classes, all non-destructive and idempotent:
+  - reflected-XSS canary (unique inert marker, detect verbatim reflection — never a live
+    `<script>` that executes anything server-side)
+  - error-based SQLi marker (detect DB error signatures in the response; no stacked queries,
+    no `OR 1=1` auth bypass against prod data, no time-based blind that hammers the server)
+  - path traversal (bounded, e.g. `../` to a known-safe canary path, detect signature)
+  - open redirect (detect 3xx to an attacker-controlled marker host)
+- **Hard limits**: honor `SCANNER_MAX_CONCURRENCY`/`SCANNER_RATE_PPS`; never send destructive
+  methods (no DELETE/PUT payloads, no form submissions that mutate state); cap payloads per
+  endpoint; respect robots is NOT sufficient — the authorization gate is the control.
+- Write each confirmed issue as a `findings` row with `evidence` = {method, url, param,
+  payload, matched_marker, confidence}. Mark low-confidence as `status='open'` with a
+  confidence field so the UI can separate confirmed from suspected.
+
+### F-DAST.4 — API + queue wiring
+
+- `services/api/src/routes/scans.ts`: accept `scan_type: 'web'` with a `profile` describing
+  enabled probe classes; enqueue to the `scanner` queue. Keep the existing `scan:run` guard
+  and the asset-authorization check that the route already documents (`scans.ts:15-16`).
+- Add a `web:scan` permission if you want to separate web DAST from port scanning in RBAC
+  (new migration, seed grant to admin/analyst). Otherwise reuse `scan:run` and say so.
+
+### F-DAST.5 — Web UI
+
+- Extend the existing Scans page (or add a Vulnerabilities/Web tab) to launch a `web` scan
+  against an authorized asset and render `findings` grouped by category with the evidence
+  payload. Reuse `DataTable`/`Panel`/severity chips. Guard the numeric coercion trap from the
+  post-remediation fix (Postgres NUMERIC → string) if any score fields render.
+
+## F-DARKWEB — Dark-web monitor (Tor-routed, read-only, watchlist-driven)
+
+New collector module in `aegis-collectors`, polling curated public leak/paste/forum sources
+**exclusively over the Tor SOCKS proxy**, matching page content against an operator watchlist
+(brands, domains, email patterns), and raising alerts on hits. Read-only: fetch and parse
+public pages, never authenticate, post, purchase, or interact.
+
+### F-DARKWEB.1 — Migration `0014b`/`0015_darkweb.sql`
+
+- `aegis.watchlist` — id, kind (`domain`,`email`,`keyword`,`brand`,`bin`), value, label,
+  severity, enabled, created_by, timestamps.
+- `aegis.darkweb_sources` — id, name, kind (`leak_site`,`paste`,`forum`), onion_url (or
+  clearnet-mirror flag), enabled, last_polled_at, poll_interval, health.
+- `aegis.darkweb_hits` — id, source_id, watchlist_id, url, snippet (redacted/truncated),
+  matched_value, observed_at, severity, alert_id (FK once alerted), status. Unique on
+  (source_id, url, matched_value) to dedupe re-observations.
+- Seed a small curated `darkweb_sources` set of well-known ransomware leak indexes / paste
+  sites. **Do not hardcode illicit-market URLs that facilitate transactions** — leak-site
+  monitoring for victim/brand exposure is the scope; sourcing a shopping list is not.
+
+### F-DARKWEB.2 — Tor-routed collector
+
+New module `crates/aegis-collectors/src/darkweb.rs`:
+- Build the HTTP client to route through `config.tor_socks_proxy`; **fail closed** — if the
+  proxy is unset or unreachable, log and skip, never fall back to a direct connection (that
+  would leak the platform's real IP and defeat the point).
+- Poll each enabled source on its interval, parse public listing/paste pages, extract text.
+- Match extracted text against enabled `watchlist` rows (exact domain/email, keyword contains,
+  brand fuzzy). On match, upsert `darkweb_hits` (dedup via the unique constraint).
+- Rate-limit and jitter requests; a monitor that hammers a hidden service is both rude and
+  fingerprintable.
+
+### F-DARKWEB.3 — Alerting + API + UI
+
+- On a new `darkweb_hits` row, raise an alert through the existing alert engine (Module 11)
+  so it hits the dashboard live feed and configured notification channels. Set `alert_id`.
+- API: `services/api/src/routes/` — CRUD for `watchlist` (perm `watchlist:write`) and read
+  endpoints for `darkweb_hits`/`darkweb_sources` (perm `darkweb:read`). New migration seeds
+  the permissions and grants.
+- UI: a Dark-web tab listing hits (source, matched value, snippet, severity, observed_at) and
+  a watchlist editor. Snippets must be truncated/redacted — do not render raw dumped
+  credentials or PII in full in the console.
+
+## Ground rules for these two features (read before writing network code)
+
+- **The authorization gate is the control, and it is not optional.** Active DAST touches only
+  `is_authorized = true` assets, enforced in Rust before the first probe, mirroring
+  `aegis-scanner/src/main.rs:101-112`. If you cannot see the gate in the code path you are
+  writing, the probe does not run.
+- **DAST payloads are benign and non-destructive.** Detection markers only — no state
+  mutation, no auth bypass against real data, no resource-exhaustion/time-based flooding, no
+  destructive HTTP methods. This is exposure discovery, not exploitation.
+- **Dark-web fetching is read-only and Tor-only, fail-closed.** No auth, no posting, no
+  purchasing, no interaction with markets. Every request goes through the SOCKS proxy or does
+  not happen. Scope is brand/victim/credential exposure on public leak/paste/forum pages.
+- **Redact on the way in.** Truncate snippets, mask credential/PII payloads before they hit
+  the DB and the UI. The platform stores evidence of exposure, not a usable copy of the dump.
+- **Legal/ethical scope is already stated** in `README.md:8-11` ("publicly available data …
+  only scan assets you are authorized to test … never bypass authentication or access
+  controls"). These features must stay inside that statement; covered in `docs/LEGAL.md` and
+  `docs/SECURITY.md`.
+- **Rust build discipline unchanged**: `SQLX_OFFLINE=true`, runtime `sqlx::query()` only, no
+  compile-time macros; regenerate `Cargo.lock` if you add deps. New scan/collector logic
+  should carry pure-logic unit tests (signature matching, payload/marker detection, watchlist
+  matching) since the network paths can't run in CI.
+- **New migration, never edit an applied one.** Next free number is `0016`.

@@ -105,6 +105,23 @@ export interface Scan {
   created_at: string;
 }
 
+/** A row from aegis.findings (web/port/tls scans all share this table). */
+export interface ScanFinding {
+  id: string;
+  scan_id: string;
+  asset_id: string | null;
+  category: string; // fingerprint|version_cve|http_header|cookie|xss|sqli|path_traversal|open_redirect|...
+  title: string;
+  description: string;
+  severity: Severity;
+  cve_id: string | null;
+  evidence: Record<string, unknown>;
+  remediation: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DashboardStats {
   iocs_total: number;
   iocs_active: number;
@@ -296,6 +313,47 @@ export interface MalwareSampleDetail extends MalwareSample {
   indicators: unknown[];
   suspicious: unknown[];
   findings: MalwareFinding[];
+}
+
+// ── Module 12: dark-web monitor ──────────────────────────────────────────────
+export type WatchKind = 'domain' | 'email' | 'keyword' | 'brand' | 'bin';
+export type DarkwebSourceKind = 'leak_site' | 'paste' | 'forum';
+export type DarkwebHitStatus = 'new' | 'reviewed' | 'false_positive' | 'actioned';
+
+export interface WatchEntry {
+  id: string;
+  kind: WatchKind;
+  value: string;
+  label: string | null;
+  severity: Severity;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DarkwebSource {
+  id: string;
+  name: string;
+  kind: DarkwebSourceKind;
+  is_onion: boolean;
+  enabled: boolean;
+  poll_interval_secs: number;
+  last_polled_at: string | null;
+  health: string | null;
+}
+
+export interface DarkwebHit {
+  id: string;
+  source_id: string;
+  source_name: string;
+  watchlist_id: string | null;
+  url: string;
+  matched_value: string;
+  snippet: string;          // redacted + truncated server-side
+  severity: Severity;
+  observed_at: string;
+  alert_id: string | null;
+  status: DarkwebHitStatus;
 }
 
 // WebSocket envelope pushed over /ws (Redis "events" channel fan-out).

@@ -15,6 +15,7 @@ import FeedsPage from './pages/Feeds';
 import ScansPage from './pages/Scans';
 import ContainersPage from './pages/Containers';
 import MalwarePage from './pages/Malware';
+import DarkwebPage from './pages/Darkweb';
 import SearchPage from './pages/Search';
 
 /** Gate that requires an authenticated session; preserves intended path. */
@@ -54,6 +55,7 @@ function RoutedPages(): JSX.Element {
         <Route path="/scans" element={<ScansPage />} />
         <Route path="/containers" element={<ContainersPage />} />
         <Route path="/malware" element={<MalwarePage />} />
+        <Route path="/darkweb" element={<DarkwebPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

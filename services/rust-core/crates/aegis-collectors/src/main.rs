@@ -82,6 +82,16 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+
+        // Dark-web monitor (F-DARKWEB). Fails closed inside poll_all if the Tor
+        // proxy is unset — never a clearnet fallback. Per-source cadence is
+        // enforced by the SQL `last_polled_at`/`poll_interval_secs` filter, so
+        // running it each cycle only polls sources that are actually due.
+        match aegis_collectors::darkweb::poll_all(jq.pool(), cfg.tor_socks_proxy.as_deref()).await {
+            Ok(hits) => tracing::info!(new_hits = hits, "dark-web monitor cycle complete"),
+            Err(e) => tracing::error!(error = %format!("{e:#}"), "dark-web monitor failed"),
+        }
+
         tracing::info!("feed sync cycle finished");
     }
 

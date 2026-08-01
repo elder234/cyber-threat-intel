@@ -68,24 +68,48 @@ struct ScanPayload {
     target: String,
     #[serde(default)]
     asset_id: Option<String>,
+    /// 'port' (default) or 'web'. Free text on aegis.scans; only these two are
+    /// handled by this worker.
+    #[serde(default = "default_scan_type")]
+    scan_type: String,
     #[serde(default)]
     profile: ScanProfile,
+}
+
+fn default_scan_type() -> String {
+    "port".to_string()
 }
 
 #[derive(Debug, Deserialize)]
 struct ScanProfile {
     #[serde(default = "default_ports")]
     ports: String,
+    /// Web scan only: active probe classes to send. Empty = passive-only.
+    #[serde(default)]
+    probe_classes: Vec<String>,
+    /// Web scan only: whether active probes are enabled by the scan's policy.
+    /// The asset-authorization gate is enforced separately and always applies.
+    #[serde(default)]
+    active_enabled: bool,
+    /// Web scan only: cap on payloads per parameter.
+    #[serde(default = "default_max_payloads")]
+    max_payloads_per_param: usize,
 }
 impl Default for ScanProfile {
     fn default() -> Self {
         Self {
             ports: default_ports(),
+            probe_classes: Vec::new(),
+            active_enabled: false,
+            max_payloads_per_param: default_max_payloads(),
         }
     }
 }
 fn default_ports() -> String {
     "top100".to_string()
+}
+fn default_max_payloads() -> usize {
+    4
 }
 
 /// Execute a queued scan: enforce authorization, scan, persist, update status.
@@ -124,6 +148,13 @@ async fn run_scan_job(
     .bind(&p.scan_id)
     .execute(pool)
     .await?;
+
+    // Dispatch by scan type. Both types run only after the authorization gate
+    // above; the web path additionally re-checks authorization before any
+    // active probe (see run_web_scan).
+    if p.scan_type == "web" {
+        return run_web_scan(pool, cfg, &p).await;
+    }
 
     let ip: IpAddr = resolve_target(&p.target)
         .await
@@ -199,6 +230,291 @@ async fn run_scan_job(
     .await?;
 
     tracing::info!(scan=%p.scan_id, open_ports=open.len(), "scan complete");
+    Ok(())
+}
+
+/// Execute a web application (DAST) scan: passive fingerprint + version→CVE,
+/// then — only if active probing is enabled AND the target is a registered,
+/// authorized asset — benign active probes. Asset-bound scans already had
+/// `is_authorized=true` proven in run_scan_job; ad-hoc (asset-less) web scans
+/// are refused active probing here so the gate cannot be bypassed.
+async fn run_web_scan(pool: &Pool, cfg: &Config, p: &ScanPayload) -> anyhow::Result<()> {
+    use aegis_scanner::web;
+
+    let url = web::normalize_url(&p.target);
+
+    // ── Passive pass (safe against any reachable host) ──────────────────────
+    let Some(result) = web::passive(&url).await else {
+        mark_scan_failed(pool, &p.scan_id, "target could not be fetched").await?;
+        anyhow::bail!("web scan: fetch failed for {url}");
+    };
+
+    // Header findings (reuse of http_headers::analyze).
+    for f in &result.header_findings {
+        insert_finding(
+            pool,
+            &p.scan_id,
+            p.asset_id.as_deref(),
+            "http_header",
+            &f.title,
+            &f.severity,
+            &format!("Header '{}' issue", f.header),
+            Some(&f.remediation),
+            None,
+            serde_json::json!({ "header": f.header }),
+        )
+        .await?;
+    }
+
+    // Fingerprint findings + version→CVE correlation.
+    for tech in &result.fingerprint.technologies {
+        insert_finding(
+            pool,
+            &p.scan_id,
+            p.asset_id.as_deref(),
+            "fingerprint",
+            &format!(
+                "Detected {}{}",
+                tech.name,
+                tech.version
+                    .as_deref()
+                    .map(|v| format!(" {v}"))
+                    .unwrap_or_default()
+            ),
+            "low",
+            "Passive technology fingerprint",
+            None,
+            None,
+            serde_json::json!({
+                "name": tech.name, "version": tech.version,
+                "cpe": tech.cpe, "source": tech.source, "confidence": tech.confidence,
+            }),
+        )
+        .await?;
+
+        // Correlate against the CVE DB by product name (loose text match; the
+        // pure matcher requires the version string to appear before it reports
+        // a version-specific hit).
+        let candidates: Vec<web::CveRow> =
+            sqlx::query_as::<_, (String, Option<f64>, Option<String>, String)>(
+                "SELECT cve_id,
+                        cvss_v31_score::float8 AS score,
+                        cvss_v31_severity::text AS severity,
+                        left(description, 2000) AS description
+                   FROM aegis.cves
+                  WHERE description ILIKE '%' || $1 || '%'
+                  ORDER BY cvss_v31_score DESC NULLS LAST
+                  LIMIT 50",
+            )
+            .bind(&tech.name)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(
+                |(cve_id, cvss_v31_score, cvss_v31_severity, description)| web::CveRow {
+                    cve_id,
+                    cvss_v31_score,
+                    cvss_v31_severity,
+                    description,
+                },
+            )
+            .collect();
+
+        let matches = web::correlate::correlate(
+            &tech.name,
+            tech.version.as_deref(),
+            tech.cpe.as_deref(),
+            &candidates,
+        );
+        for m in matches {
+            insert_finding(
+                pool,
+                &p.scan_id,
+                p.asset_id.as_deref(),
+                "version_cve",
+                &m.title,
+                &m.severity,
+                "Detected software version matches a known CVE",
+                None,
+                Some(&m.cve_id),
+                serde_json::json!({
+                    "product": m.product, "version": m.version,
+                    "cpe": m.cpe, "confidence": m.confidence,
+                }),
+            )
+            .await?;
+        }
+    }
+
+    // ── Active pass (gated) ─────────────────────────────────────────────────
+    // Runs only when the scan policy enables it AND the target is a registered
+    // asset (whose is_authorized=true was proven in run_scan_job). Ad-hoc web
+    // scans cannot active-probe: register the target as an authorized asset.
+    if p.profile.active_enabled {
+        if p.asset_id.is_some() {
+            run_web_probes(pool, cfg, p, &url).await?;
+        } else {
+            tracing::warn!(
+                scan=%p.scan_id,
+                "active web probing requested for an ad-hoc target; refused \
+                 (register an authorized asset to enable probing)"
+            );
+        }
+    }
+
+    sqlx::query(
+        "UPDATE aegis.scans SET status='completed', progress=100, finished_at=now() WHERE id=$1::uuid",
+    )
+    .bind(&p.scan_id)
+    .execute(pool)
+    .await?;
+    tracing::info!(scan=%p.scan_id, "web scan complete");
+    Ok(())
+}
+
+/// Send benign active probes against the target's query parameters. GET-only,
+/// idempotent, capped per parameter. Only reached after the authorization +
+/// policy gate in run_web_scan.
+async fn run_web_probes(
+    pool: &Pool,
+    cfg: &Config,
+    p: &ScanPayload,
+    url: &str,
+) -> anyhow::Result<()> {
+    use aegis_scanner::web::probes::{self, ProbeClass};
+
+    let classes: Vec<ProbeClass> = p
+        .profile
+        .probe_classes
+        .iter()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    if classes.is_empty() {
+        return Ok(());
+    }
+
+    // Parse the target URL and its existing query parameters. With no query
+    // parameters there is nothing to inject into; a crawler is future work.
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return Ok(()),
+    };
+    let params: Vec<String> = parsed.query_pairs().map(|(k, _)| k.to_string()).collect();
+    if params.is_empty() {
+        tracing::info!(scan=%p.scan_id, "web scan: no query parameters to probe");
+        return Ok(());
+    }
+
+    let nonce: String = p
+        .scan_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(15))
+        // Do not auto-follow redirects: the open-redirect classifier needs the 3xx.
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("aegis-cti-scanner/1.0")
+        .build()?;
+
+    // Simple rate limit: a small delay between probes. Honors the spirit of the
+    // scanner's concurrency setting without a full token bucket.
+    let delay =
+        Duration::from_millis((1000 / cfg.scanner_max_concurrency.clamp(1, 50) as u64).max(20));
+
+    for param in &params {
+        for payload in probes::payloads_for(&classes, &nonce, p.profile.max_payloads_per_param) {
+            // Build a URL with `param` replaced by the payload value.
+            let mut probe_url = parsed.clone();
+            let new_query: Vec<(String, String)> = parsed
+                .query_pairs()
+                .map(|(k, v)| {
+                    if k == param.as_str() {
+                        (k.to_string(), payload.value.clone())
+                    } else {
+                        (k.to_string(), v.to_string())
+                    }
+                })
+                .collect();
+            probe_url.query_pairs_mut().clear().extend_pairs(&new_query);
+
+            tokio::time::sleep(delay).await;
+            let Ok(resp) = client.get(probe_url.as_str()).send().await else {
+                continue;
+            };
+            let status = resp.status().as_u16();
+            let headers: Vec<(String, String)> = resp
+                .headers()
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.as_str().to_ascii_lowercase(),
+                        v.to_str().unwrap_or("").to_string(),
+                    )
+                })
+                .collect();
+            let body = resp.text().await.unwrap_or_default();
+
+            let presp = probes::ProbeResponse {
+                status,
+                headers: &headers,
+                body: &body,
+            };
+            if let Some(f) = probes::classify(&payload, param, &presp) {
+                insert_finding(
+                    pool,
+                    &p.scan_id,
+                    p.asset_id.as_deref(),
+                    &f.class,
+                    &format!("Possible {} in parameter '{}'", f.class, f.param),
+                    &f.severity,
+                    &f.evidence,
+                    None,
+                    None,
+                    serde_json::json!({
+                        "method": "GET", "param": f.param, "payload": f.payload,
+                        "marker": f.marker, "confidence": f.confidence, "evidence": f.evidence,
+                    }),
+                )
+                .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Insert one row into aegis.findings.
+#[allow(clippy::too_many_arguments)]
+async fn insert_finding(
+    pool: &Pool,
+    scan_id: &str,
+    asset_id: Option<&str>,
+    category: &str,
+    title: &str,
+    severity: &str,
+    description: &str,
+    remediation: Option<&str>,
+    cve_id: Option<&str>,
+    evidence: serde_json::Value,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO aegis.findings
+           (scan_id, asset_id, category, title, severity, description, remediation, cve_id, evidence)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5::aegis.severity, $6, $7, $8, $9)",
+    )
+    .bind(scan_id)
+    .bind(asset_id)
+    .bind(category)
+    .bind(title)
+    .bind(severity)
+    .bind(description)
+    .bind(remediation)
+    .bind(cve_id)
+    .bind(evidence)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

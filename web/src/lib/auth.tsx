@@ -79,3 +79,11 @@ export function useHasRole(...roles: string[]): boolean {
   const owned = new Set(user.roles.map((r) => r.toLowerCase()));
   return roles.some((r) => owned.has(r.toLowerCase()));
 }
+
+/** True when the current user holds ALL of the given permission codes. */
+export function useHasPerm(...perms: string[]): boolean {
+  const { user } = useAuth();
+  if (!user) return false;
+  const held = new Set(user.perms ?? []);
+  return perms.every((p) => held.has(p));
+}
