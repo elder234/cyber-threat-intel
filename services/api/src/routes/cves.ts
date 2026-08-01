@@ -59,7 +59,11 @@ export default async function cveRoutes(app: FastifyInstance): Promise<void> {
   /** GET /api/cves/kev/recent — cached KEV widget feed */
   app.get('/kev/recent', { preHandler: [app.requirePerms('cve:read')], schema: { tags: ['cves'] } },
     async () => cached('cve:kev:recent', 300, async () => {
-      const { rows } = await pool.query('SELECT * FROM aegis.v_recent_kev');
+      const { rows } = await pool.query(
+        `SELECT cve_id, description, cvss_v31_score, cvss_v31_severity, epss_score,
+                epss_percentile, kev, kev_ransomware, published_at
+           FROM aegis.v_recent_kev`,
+      );
       return rows;
     }));
 }

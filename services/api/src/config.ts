@@ -8,6 +8,8 @@ dotenv.config();
  * Central, validated configuration. Fails fast at boot if required secrets are
  * missing or malformed — no service should start in a half-configured state.
  */
+const PLACEHOLDER_SECRET = /^change_me|^ChangeMe123!$/i;
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.string().default('info'),
@@ -31,7 +33,8 @@ const schema = z.object({
   RATE_LIMIT_WINDOW: z.coerce.number().int().positive().default(60),
 
   SEED_ADMIN_EMAIL: z.string().email().default('admin@aegis.local'),
-  SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe123!'),
+  // No default: a published admin password must never be used silently.
+  SEED_ADMIN_PASSWORD: z.string().min(8),
 
   // ── Notifications (Module 11) — all optional; a channel is disabled if unset ──
   SMTP_HOST: z.string().optional(),
@@ -41,7 +44,21 @@ const schema = z.object({
   SMTP_FROM: z.string().default('Aegis CTI <aegis@localhost>'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   ALERTS_ENABLED: z.coerce.boolean().default(true),
-});
+})
+  // Hard-fail on repo-published placeholder secrets in production. These pass
+  // shape validation (min length) but are publicly known signing/admin keys.
+  .superRefine((val, ctx) => {
+    if (val.NODE_ENV !== 'production') return;
+    for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'SEED_ADMIN_PASSWORD'] as const) {
+      if (PLACEHOLDER_SECRET.test(val[key])) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} must not be a placeholder value in production`,
+        });
+      }
+    }
+  });
 
 const parsed = schema.safeParse(process.env);
 if (!parsed.success) {

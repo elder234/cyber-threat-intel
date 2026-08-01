@@ -55,13 +55,15 @@ export function LiveProvider({ children }: { children: ReactNode }): JSX.Element
     }
     setStatus('connecting');
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${window.location.host}/ws?token=${encodeURIComponent(token)}`;
-    const ws = new WebSocket(url);
+    // The token is sent as the first message (never in the URL or handshake
+    // headers) so it can't leak into proxy/access logs.
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
       attemptRef.current = 0;
       setStatus('open');
+      ws.send(JSON.stringify({ type: 'auth', token }));
     };
     ws.onmessage = (msg) => {
       let evt: LiveEvent;

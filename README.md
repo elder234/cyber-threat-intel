@@ -81,12 +81,14 @@ aegis-cti/
 ```bash
 git clone <repo> aegis-cti && cd aegis-cti
 cp .env.example .env            # then edit secrets & API keys
-docker compose up -d --build
+docker compose up -d            # pulls prebuilt ghcr.io images (no build on the box)
 # API:        http://localhost:8080/api/health
 # Swagger:    http://localhost:8080/api/docs
 # Dashboard:  http://localhost:8080/
-# OpenSearch: http://localhost:9200
 ```
+
+Use `docker compose up -d --build` only when building from source (CI publishes the
+images; a VPS deploy should pull, not compile).
 
 Migrations run automatically on API startup (see `services/api/src/db/migrate.ts`).
 A default admin is seeded from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.

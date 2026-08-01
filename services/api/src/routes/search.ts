@@ -27,7 +27,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const results = await cached(`search:${q}:${limit}`, 60, async () => {
       const { rows } = await pool.query(
-        'SELECT * FROM aegis.unified_search($1, $2)', [q, limit],
+        'SELECT entity_type, entity_id, label, sub_label, rank, severity FROM aegis.unified_search($1, $2)',
+        [q, limit],
       );
       return rows;
     });

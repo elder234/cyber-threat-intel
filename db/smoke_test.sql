@@ -53,10 +53,14 @@ BEGIN
   ASSERT (SELECT count(*) FROM aegis.unified_search('203.0.113.5')) >= 1,
          'unified_search must find the test IOC';
 
-  -- 6. Dashboard stats returns valid json with expected keys.
+  -- 6. Dashboard stats returns every key the frontend DashboardStats consumes.
   v_stats := aegis.dashboard_stats();
-  ASSERT v_stats ? 'iocs_active' AND v_stats ? 'jobs_pending',
-         'dashboard_stats missing keys';
+  ASSERT (SELECT bool_and(v_stats ? k) FROM unnest(ARRAY[
+           'iocs_total','iocs_active','cves_kev','alerts_open','scans_running',
+           'feeds_healthy','feeds_total','risk_score','by_severity','ingest_24h'
+         ]) AS k), 'dashboard_stats missing keys';
+  ASSERT v_stats->>'risk_score' ~ '^\d+$', 'risk_score must be an int';
+  ASSERT (v_stats->'by_severity'->'critical') IS NOT NULL, 'by_severity must be bucketed';
 
   -- cleanup test rows
   DELETE FROM aegis.iocs WHERE source LIKE 'unit-test%';

@@ -45,20 +45,22 @@ const schema = /* GraphQL */ `
   type SearchResult {
     entityType: String!
     entityId: String!
-    title: String!
-    subtitle: String
-    score: Float
+    label: String!
+    subLabel: String
+    severity: String
+    rank: Float
   }
 
   type DashboardStats {
+    iocsTotal: Int!
     iocsActive: Int!
-    iocsCritical: Int!
-    cvesTotal: Int!
     cvesKev: Int!
     alertsOpen: Int!
     scansRunning: Int!
-    findingsOpen: Int!
-    jobsPending: Int!
+    feedsHealthy: Int!
+    feedsTotal: Int!
+    riskScore: Int!
+    ingest24h: Int!
   }
 `;
 
@@ -108,19 +110,24 @@ const resolvers = {
     },
     search: async (_: unknown, { q, limit }: { q: string; limit: number }, ctx: Ctx) => {
       requirePerm(ctx, 'search:read');
-      const { rows } = await pool.query('SELECT * FROM aegis.unified_search($1,$2)', [q, limit]);
+      const { rows } = await pool.query(
+        'SELECT entity_type, entity_id, label, sub_label, rank, severity FROM aegis.unified_search($1,$2)',
+        [q, limit],
+      );
       return rows.map((r) => ({
-        entityType: r.entity_type, entityId: r.entity_id, title: r.title, subtitle: r.subtitle, score: r.score,
+        entityType: r.entity_type, entityId: r.entity_id, label: r.label,
+        subLabel: r.sub_label, severity: r.severity, rank: r.rank,
       }));
     },
     dashboardStats: async (_: unknown, __: unknown, ctx: Ctx) => {
-      if (!ctx.user) throw new mercurius.ErrorWithProps('Unauthorized', {}, 401);
+      requirePerm(ctx, 'dashboard:read');
       const { rows } = await pool.query('SELECT aegis.dashboard_stats() AS s');
       const s = rows[0].s;
       return {
-        iocsActive: s.iocs_active, iocsCritical: s.iocs_critical, cvesTotal: s.cves_total,
-        cvesKev: s.cves_kev, alertsOpen: s.alerts_open, scansRunning: s.scans_running,
-        findingsOpen: s.findings_open, jobsPending: s.jobs_pending,
+        iocsTotal: s.iocs_total, iocsActive: s.iocs_active, cvesKev: s.cves_kev,
+        alertsOpen: s.alerts_open, scansRunning: s.scans_running,
+        feedsHealthy: s.feeds_healthy, feedsTotal: s.feeds_total,
+        riskScore: s.risk_score, ingest24h: s.ingest_24h,
       };
     },
   },

@@ -75,9 +75,34 @@ d('API integration (auth + RBAC + IOC lifecycle)', () => {
     expect(res.json().count).toBeGreaterThanOrEqual(1);
   });
 
-  it('health readiness reports dependencies', async () => {
+  it('health readiness returns a bare status (no internals leak)', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health/ready' });
     expect([200, 503]).toContain(res.statusCode);
-    expect(res.json().checks.postgres).toBeDefined();
+    expect(res.json()).toEqual({ status: expect.stringMatching(/^(ready|degraded)$/) });
+  });
+
+  it('rejects oversized malware uploads with 413 and stores nothing (P3)', async () => {
+    const boundary = '----aegis-oversize';
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.bin"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`,
+      ),
+      Buffer.alloc(33 * 1024 * 1024, 0x61),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const res = await app.inject({
+      method: 'POST', url: '/api/malware/samples',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(413);
+    const { rows } = await (await import('../src/db/pool.js')).pool.query(
+      `SELECT count(*)::int AS n FROM aegis.malware_samples WHERE name = 'big.bin'`,
+    );
+    expect(rows[0].n).toBe(0);
   });
 });

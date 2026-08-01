@@ -59,7 +59,7 @@ The client talks to the Fastify API (see `services/api`) at a shared origin:
 | feeds      | `GET /api/feeds`, `/api/feeds/:id/runs`, `POST /api/feeds/:id/sync` |
 | scans      | `GET /api/scans`, `/api/scans/:id`, `POST /api/scans` |
 | search     | `GET /api/search?q=` |
-| realtime   | `GET /ws?token=` (JWT) — fans out the Redis `events` channel |
+| realtime   | `GET /ws` — auth via first message `{"type":"auth","token":<jwt>}`; fans out the Redis `events` channel |
 
 ## Develop
 

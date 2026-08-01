@@ -127,13 +127,13 @@ export interface TimelineEvent {
 
 export interface AttackStat {
   tactic: string;
-  technique: string | null;
   count: number;
 }
 
 export interface TopSource {
   source: string;
   count: number;
+  high_sev: number;
 }
 
 export interface SearchResult {

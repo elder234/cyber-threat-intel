@@ -23,7 +23,9 @@ export default async function alertRoutes(app: FastifyInstance): Promise<void> {
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       params.push(limit, offset);
       const { rows } = await pool.query(
-        `SELECT * FROM aegis.alerts ${whereSql} ORDER BY created_at DESC
+        `SELECT id, title, severity, status, source, body AS summary,
+                created_at, acknowledged_at, resolved_at
+           FROM aegis.alerts ${whereSql} ORDER BY created_at DESC
           LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
       return { data: rows, pagination: { limit, offset } };
     });

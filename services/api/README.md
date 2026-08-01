@@ -30,7 +30,7 @@ API self-migrates on boot (`server.ts` → `runMigrations()` → `seedAdmin()`).
 | Scans | `GET/POST /api/scans`, `GET /api/scans/:id` |
 | System | `GET /api/health`, `/api/health/ready` |
 | GraphQL | `POST /api/graphql` (GraphiQL in dev) |
-| WebSocket | `GET /ws?token=<jwt>` |
+| WebSocket | `GET /ws` — auth via first message `{"type":"auth","token":<jwt>}` |
 
 ## Security design
 
