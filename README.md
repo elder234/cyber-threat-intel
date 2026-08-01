@@ -81,10 +81,16 @@ aegis-cti/
 ```bash
 git clone <repo> aegis-cti && cd aegis-cti
 cp .env.example .env            # then edit secrets & API keys
+# mTLS edge — generate the private CA, a server cert, and one client cert per device:
+deploy/mtls/generate-certs.sh init -i <host-ip-or-domain>
+MTLS_CLIENT_P12_PASSWORD='<strong-password>' deploy/mtls/generate-certs.sh client <your-name>
 docker compose up -d            # pulls prebuilt ghcr.io images (no build on the box)
-# API:        http://localhost:8080/api/health
-# Swagger:    http://localhost:8080/api/docs
-# Dashboard:  http://localhost:8080/
+# The ONLY published port is the mTLS edge:
+#   Dashboard:  https://<host-ip>:8443   (trust certs/ca.crt + import your <name>.p12)
+#   API health: curl --cacert deploy/mtls/certs/ca.crt \
+#                   --cert deploy/mtls/certs/<name>.crt \
+#                   --key  deploy/mtls/certs/<name>.key \
+#                   https://<host-ip>:8443/api/health
 ```
 
 Use `docker compose up -d --build` only when building from source (CI publishes the

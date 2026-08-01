@@ -2,6 +2,9 @@
 # Aegis CTI — full local stack
 # Usage: cp .env.example .env && docker compose up -d  (pulls prebuilt images;
 # add --build to compile from source locally)
+# The ONLY published port is the caddy mTLS edge (8443). Before first boot run:
+#   deploy/mtls/generate-certs.sh init -i <vps-ip>
+#   MTLS_CLIENT_P12_PASSWORD='<password>' deploy/mtls/generate-certs.sh client <name>
 # ─────────────────────────────────────────────────────────────────────────────
 name: aegis-cti
 
@@ -185,10 +188,31 @@ services:
     mem_limit: 256m
     depends_on:
       api: { condition: service_started }
+    # Container nginx listens on 8080 only (unprivileged). TLS is terminated by
+    # the caddy mTLS edge; this service is deliberately NOT published to the
+    # host — the edge below is the only public entrypoint.
+    expose:
+      - "8080"
+    networks: [aegis]
+
+  # ── Caddy — TLS/mTLS edge (sole public entrypoint) ─────────────────────────
+  # Terminates TLS 1.2/1.3 with MUTUAL authentication against the private CA in
+  # deploy/mtls/certs. Generate certs first:
+  #   deploy/mtls/generate-certs.sh init -i <vps-public-ip>
+  #   MTLS_CLIENT_P12_PASSWORD='<strong-password>' deploy/mtls/generate-certs.sh client <your-name>
+  # Without the CA + server cert in deploy/mtls/certs this service will not
+  # start. Nothing uses a public CA, so the domain never appears in CT logs.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    mem_limit: 64m
     ports:
-      # Container nginx listens on 8080 only (unprivileged). TLS is terminated
-      # by the host reverse proxy / Certbot on the VPS, not inside this image.
-      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - ./deploy/mtls/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/mtls/certs:/certs:ro
+    depends_on:
+      web: { condition: service_started }
     networks: [aegis]
 
   # ── Aegis analyzer sidecar — Module 9 malware static analysis ─────────────
