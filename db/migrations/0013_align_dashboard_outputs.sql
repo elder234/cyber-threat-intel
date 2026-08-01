@@ -11,7 +11,10 @@ SET search_path TO aegis, public;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- unified_search: entity_type / entity_id / label / sub_label / rank / severity
 -- (renamed from title/subtitle/score; severity is now produced for ioc + cve).
+-- The RETURNS TABLE shape changes, so DROP first: CREATE OR REPLACE FUNCTION
+-- forbids changing a function's result type.
 -- ─────────────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS aegis.unified_search(p_q text, p_limit int);
 CREATE OR REPLACE FUNCTION aegis.unified_search(p_q text, p_limit int DEFAULT 25)
 RETURNS TABLE(
   entity_type text, entity_id text, label text, sub_label text, rank real,
@@ -83,7 +86,10 @@ $$ LANGUAGE sql STABLE;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v_attack_stats: tactic / count (UI names; tactic-level aggregation only).
+-- Column names change, so DROP first: CREATE OR REPLACE VIEW forbids renaming
+-- or removing view columns.
 -- ─────────────────────────────────────────────────────────────────────────────
+DROP VIEW IF EXISTS aegis.v_attack_stats;
 CREATE OR REPLACE VIEW aegis.v_attack_stats AS
   SELECT t.name AS tactic, count(DISTINCT i.id) AS count
     FROM aegis.mitre_tactics t
@@ -95,6 +101,7 @@ CREATE OR REPLACE VIEW aegis.v_attack_stats AS
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v_top_sources: source / count / high_sev (UI names).
 -- ─────────────────────────────────────────────────────────────────────────────
+DROP VIEW IF EXISTS aegis.v_top_sources;
 CREATE OR REPLACE VIEW aegis.v_top_sources AS
   SELECT source, count(*) AS count,
          count(*) FILTER (WHERE severity IN ('high','critical')) AS high_sev
@@ -106,6 +113,7 @@ CREATE OR REPLACE VIEW aegis.v_top_sources AS
 -- ─────────────────────────────────────────────────────────────────────────────
 -- v_recent_kev: widen to the full Cve shape the frontend consumes.
 -- ─────────────────────────────────────────────────────────────────────────────
+DROP VIEW IF EXISTS aegis.v_recent_kev;
 CREATE OR REPLACE VIEW aegis.v_recent_kev AS
   SELECT cve_id, description, cvss_v31_score, cvss_v31_severity, epss_score,
          epss_percentile, kev, kev_ransomware, published_at, kev_added_at
