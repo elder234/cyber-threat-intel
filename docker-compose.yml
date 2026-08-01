@@ -43,11 +43,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     mem_limit: 256m
+    # data cap under the 256m mem_limit — evict, don't OOM-kill
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD:-change_me_redis}
       --appendonly yes
-      --maxmemory 192mb   # data cap under the 256m mem_limit — evict, don't OOM-kill
+      --maxmemory 192mb
       --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
