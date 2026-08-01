@@ -159,13 +159,22 @@ All three follow-up items are landed on `main`.
   (the plugin serves TLS on 9200 with its generated certs). `OPENSEARCH_NODE` configmaps
   now point at `https://`. Verified caveat: **no API component currently talks to
   OpenSearch** — the `OPENSEARCH_*` env vars are reserved and unconsumed, so there was no
-  client to point at TLS. docker-compose stays dev-insecure, now with an explicit comment
-  that the k8s/Helm paths run secured.
-- **F2** — DONE. Compose totals now **3200 MiB** on the 4096 MiB host (was 4224). OpenSearch
-  `mem_limit` 1g→512m with `-Xms/-Xmx` 512m→256m; worker 512m→256m; collectors 384m→256m;
+  client to point at TLS. On the 1.9 GiB VPS (2026-08-01), OpenSearch 2.13 could
+  not boot inside a 512m limit even with security + PA disabled (~1g RSS floor
+  with its bundled plugin set), so the compose service is now **profiled out of
+  the default stack** (`docker compose --profile opensearch up -d` to opt in on a
+  box with RAM to spare; sized 1g/512m heap) and the `api` → `opensearch`
+  health dependency was removed — nothing uses OpenSearch, and it was blocking
+  the whole stack. The k8s/Helm paths still run it secured.
+- **F2** — DONE. Compose limits total **3200 MiB** (was 4224), then OpenSearch was
+  profiled out of the default stack (see F1), leaving the default set at **2560 MiB** of
+  ceilings (384 postgres + 256 redis + 512 api + 256 worker + 256 collectors + 384 scanner
+  + 256 web + 256 analyzer). OpenSearch 512m/256m heap; worker 512m→256m; collectors 384m→256m;
   scanner 512m→384m. Redis `--maxmemory` 512mb→192mb so it evicts inside its 256m `mem_limit`
   instead of being OOM-killed. `SCANNER_MAX_CONCURRENCY` lowered to 64 in `.env.example`,
-  k8s configmap, and Helm values. Verify the sizing with `docker stats` under load.
+  k8s configmap, and Helm values. Note the audit's "4096 MiB host" was wrong for the VPS —
+  it has **1.9 GiB and no swap**, so ceilings are only safe because actual usage is far
+  lower. Verify the sizing with `docker stats` under load.
 - **F3** — DONE. All 8 `SELECT *` sites replaced with explicit column lists matching the
   declared response types: `cves.ts:54`, `iocs.ts:72/98`, `rules.ts:90`,
   `scans.ts:31/34/35/36` (scan detail columns enumerate `scan_ports`/`scan_tls`/`findings`).

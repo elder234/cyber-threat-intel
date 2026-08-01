@@ -59,24 +59,29 @@ services:
       retries: 10
     networks: [aegis]
 
-  # ── OpenSearch — full-text / IOC search ────────────────────────────────────
+  # ── OpenSearch — full-text / IOC search (OPT-IN) ────────────────────────────
+  # Nothing in the codebase talks to OpenSearch yet (the OPENSEARCH_* env vars
+  # are reserved but unconsumed), and 2.13 needs ~1g RSS to boot with its
+  # bundled plugin set. On a 1.9 GiB VPS that made it a crash-looping dead
+  # weight that also blocked the API (which used to depend on its health). It
+  # is profiled OUT of the default stack; enable on a box with RAM to spare:
+  #   docker compose --profile opensearch up -d
   opensearch:
     image: opensearchproject/opensearch:2.13.0
     restart: unless-stopped
-    mem_limit: 512m
+    mem_limit: 1g
+    profiles: ["opensearch"]
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       # Security plugin OFF here for local dev ONLY. The k8s and Helm deploy
       # paths run it enabled (auth + TLS on 9200). Do not copy this dev posture
       # to a production deployment.
       # DISABLE_SECURITY_PLUGIN is the docker-entrypoint's documented switch for
       # the docker image: it disables the plugin from the start AND skips
-      # install_demo_configuration.sh (the old dotted plugins.security.disabled
-      # env only disabled it AFTER that installer ran — a second JVM,
-      # securityadmin.sh, that blows past the 512m mem_limit). The PA agent is
-      # also unused, so drop it too.
+      # install_demo_configuration.sh (a second JVM, securityadmin.sh, that
+      # spikes memory at boot). The PA agent is unused too.
       - DISABLE_SECURITY_PLUGIN=true
       - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
     ulimits:
@@ -106,7 +111,6 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      opensearch: { condition: service_healthy }
       analyzer: { condition: service_started }
     expose:
       - "8080"
