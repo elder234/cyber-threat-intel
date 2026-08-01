@@ -1,0 +1,33 @@
+# Cloudflare Tunnel configuration — copy to config.yml and fill in the UUID + domain.
+#
+# One-time setup (run on the VPS from the repo root, using the same docker image
+# that the compose `cloudflared` service uses):
+#
+#   1. Log in and authorize the VPS with your Cloudflare account:
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
+#      (opens a browser URL — authorize there; cert.pem is written to this dir)
+#
+#   2. Create the tunnel (prints a UUID, writes <uuid>.json here):
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+#
+#   3. Point your domain at Cloudflare (nameservers at your registrar), then add
+#      the DNS route so the hostname resolves to this tunnel:
+#        docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+#
+#   4. docker compose up -d
+#
+# Cloudflare terminates TLS on 443 with a browser-trusted cert. Add the public
+# hostname as a Cloudflare Access application (email / mTLS / SSO login) so the
+# dashboard is not reachable by anyone who finds the domain — the app's own JWT
+# login is the second layer.
+
+tunnel: <your-tunnel-uuid>
+credentials-file: /etc/cloudflared/<your-tunnel-uuid>.json
+
+ingress:
+  # The dashboard SPA + /api + /ws are served by nginx in the `web` container.
+  - hostname: yourdomain.com
+    service: http://web:8080
+
+  # Catch-all — anything not matched above returns 404.
+  - service: http_status:404

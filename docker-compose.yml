@@ -2,9 +2,13 @@
 # Aegis CTI — full local stack
 # Usage: cp .env.example .env && docker compose up -d  (pulls prebuilt images;
 # add --build to compile from source locally)
-# The ONLY published port is the caddy mTLS edge (8443). Before first boot run:
-#   deploy/mtls/generate-certs.sh init -i <vps-ip>
-#   MTLS_CLIENT_P12_PASSWORD='<password>' deploy/mtls/generate-certs.sh client <name>
+# ZERO host ports are published. The dashboard is reached ONLY through the
+# Cloudflare Tunnel (cloudflared service) at https://yourdomain.com — the VPS
+# makes outbound connections only. One-time setup (see README):
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+#   cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml   # fill UUID + domain
+#   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
 # ─────────────────────────────────────────────────────────────────────────────
 name: aegis-cti
 
@@ -188,29 +192,31 @@ services:
     mem_limit: 256m
     depends_on:
       api: { condition: service_started }
-    # Container nginx listens on 8080 only (unprivileged). TLS is terminated by
-    # the caddy mTLS edge; this service is deliberately NOT published to the
-    # host — the edge below is the only public entrypoint.
+    # Container nginx listens on 8080 only (unprivileged). This service is
+    # deliberately NOT published to the host — the cloudflared tunnel below is
+    # the only public entrypoint.
     expose:
       - "8080"
     networks: [aegis]
 
-  # ── Caddy — TLS/mTLS edge (sole public entrypoint) ─────────────────────────
-  # Terminates TLS 1.2/1.3 with MUTUAL authentication against the private CA in
-  # deploy/mtls/certs. Generate certs first:
-  #   deploy/mtls/generate-certs.sh init -i <vps-public-ip>
-  #   MTLS_CLIENT_P12_PASSWORD='<strong-password>' deploy/mtls/generate-certs.sh client <your-name>
-  # Without the CA + server cert in deploy/mtls/certs this service will not
-  # start. Nothing uses a public CA, so the domain never appears in CT logs.
-  caddy:
-    image: caddy:2
+  # ── Cloudflare Tunnel — sole public entrypoint (ZERO published ports) ───────
+  # cloudflared dials OUT to the Cloudflare edge; yourdomain.com is served by
+  # Cloudflare on 443 with a browser-trusted cert. The VPS has no open inbound
+  # ports at all (egress-only). One-time setup from the repo root:
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+  #   cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml  # fill UUID + domain
+  #   docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel route dns <uuid> yourdomain.com
+  # Put the public hostname behind a Cloudflare Access application so the
+  # dashboard is not open to anyone who reaches the domain (the app's own JWT
+  # login is the second layer).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
     restart: unless-stopped
     mem_limit: 64m
-    ports:
-      - "8443:8443"
+    command: tunnel --no-autoupdate run --config /etc/cloudflared/config.yml
     volumes:
-      - ./deploy/mtls/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./deploy/mtls/certs:/certs:ro
+      - ./deploy/cloudflared:/etc/cloudflared:ro
     depends_on:
       web: { condition: service_started }
     networks: [aegis]

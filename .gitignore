@@ -33,5 +33,6 @@ data/
 *.key
 !nginx/certs/README.md
 
-# mTLS material — private CA, keys, client identities (see deploy/mtls/generate-certs.sh)
-deploy/mtls/certs/
+# Cloudflare Tunnel — cert.pem, tunnel credentials JSON, live config (template is committed)
+deploy/cloudflared/*
+!deploy/cloudflared/config.yml.example

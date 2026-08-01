@@ -81,16 +81,14 @@ aegis-cti/
 ```bash
 git clone <repo> aegis-cti && cd aegis-cti
 cp .env.example .env            # then edit secrets & API keys
-# mTLS edge — generate the private CA, a server cert, and one client cert per device:
-deploy/mtls/generate-certs.sh init -i <host-ip-or-domain>
-MTLS_CLIENT_P12_PASSWORD='<strong-password>' deploy/mtls/generate-certs.sh client <your-name>
+# Cloudflare Tunnel — zero open ports: the VPS dials OUT, Cloudflare serves your
+# domain on 443. One-time setup (same docker image the compose service uses):
+docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel login
+docker run --rm -it -v "$PWD/deploy/cloudflared:/root/.cloudflared" cloudflare/cloudflared tunnel create aegis
+cp deploy/cloudflared/config.yml.example deploy/cloudflared/config.yml   # fill UUID + domain
 docker compose up -d            # pulls prebuilt ghcr.io images (no build on the box)
-# The ONLY published port is the mTLS edge:
-#   Dashboard:  https://<host-ip>:8443   (trust certs/ca.crt + import your <name>.p12)
-#   API health: curl --cacert deploy/mtls/certs/ca.crt \
-#                   --cert deploy/mtls/certs/<name>.crt \
-#                   --key  deploy/mtls/certs/<name>.key \
-#                   https://<host-ip>:8443/api/health
+#   Dashboard:  https://yourdomain.com    (put the hostname behind Cloudflare Access)
+#   API health: curl https://yourdomain.com/api/health
 ```
 
 Use `docker compose up -d --build` only when building from source (CI publishes the

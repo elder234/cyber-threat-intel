@@ -16,11 +16,11 @@ Aegis CTI — modular, containerized cyber-threat-intelligence platform.
 - Rust (`services/rust-core`): `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`. Build a single binary with `cargo build --release --bin aegis-worker` (same for `aegis-scanner`, `aegis-collectors`, `aegis-analyzer`).
 - Web (`web`): `npm run typecheck`, `npm run lint`, `npm run build`.
 - Full stack: `cp .env.example .env && docker compose up -d --build`. Before first
-  boot, generate the mTLS material (`deploy/mtls/generate-certs.sh`). The **only**
-  published host port is the caddy mTLS edge `https://<host>:8443` — dashboard, API,
-  and all datastores are `expose:`-only; hit API health through the edge with a
-  client cert (`curl --cacert deploy/mtls/certs/ca.crt --cert <name>.crt --key <name>.key
-  https://<host>:8443/api/health`). Rust services build ONE shared image
+  boot, wire up the Cloudflare Tunnel (`deploy/cloudflared/config.yml.example`, see
+  README). **No host ports are published** — dashboard, API, and all datastores are
+  `expose:`-only, and the sole public entrypoint is the `cloudflared` tunnel at
+  `https://<yourdomain>` (the VPS makes outbound connections only; hit API health via
+  `curl https://<yourdomain>/api/health`). Rust services build ONE shared image
   (`ghcr.io/elder234/aegis-cti-rust`) that compiles all four binaries in a single cargo
   invocation (BuildKit cache mounts); compose selects the binary per service via
   `command: ["/usr/local/bin/aegis-<name>"]`. Never build the four as separate images —
@@ -61,9 +61,9 @@ by default, P2 makes the dashboard lie, P3 is a data-integrity bug.
 ## Resolution status
 
 - **P0** — PARTIAL→DONE. Datastore `ports:` removed from docker-compose.yml (`ac529bc`),
-  and the last host port is now the caddy **mTLS** edge `8443:8443` (web is `expose:`-only)
-  — see "mTLS edge" in Commands. OpenSearch security was still disabled in the deploy
-  paths; resolved in F1 below.
+  and compose now publishes **zero host ports** — the sole entrypoint is the Cloudflare
+  Tunnel (`cloudflared`) at `https://<yourdomain>` (web is `expose:`-only). OpenSearch
+  security was still disabled in the deploy paths; resolved in F1 below.
 - **P1** — DONE. `config.ts` hard-fails on `/^change_me|^ChangeMe123!$/` when
   `NODE_ENV=production`; `SEED_ADMIN_PASSWORD` has no default. New migration
   `0013` adds `dashboard:read`.
@@ -179,7 +179,7 @@ All three follow-up items are landed on `main`.
 - **F2** — DONE. Compose limits total **3200 MiB** (was 4224), then OpenSearch was
   profiled out of the default stack (see F1), leaving the default set at **2624 MiB** of
   ceilings (384 postgres + 256 redis + 512 api + 256 worker + 256 collectors + 384 scanner
-  + 256 web + 256 analyzer + 64 caddy). OpenSearch 512m/256m heap; worker 512m→256m; collectors 384m→256m;
+  + 256 web + 256 analyzer + 64 cloudflared). OpenSearch 512m/256m heap; worker 512m→256m; collectors 384m→256m;
   scanner 512m→384m. Redis `--maxmemory` 512mb→192mb so it evicts inside its 256m `mem_limit`
   instead of being OOM-killed. `SCANNER_MAX_CONCURRENCY` lowered to 64 in `.env.example`,
   k8s configmap, and Helm values. Note the audit's "4096 MiB host" was wrong for the VPS —
