@@ -62,26 +62,34 @@ case "$cmd" in
     fi
 
     CA_KEY="$CERTS/ca.key"; CA_CRT="$CERTS/ca.crt"
-    if [ -f "$CA_KEY" ] || [ -f "$CA_CRT" ]; then
-      if [ "$FORCE" -eq 0 ]; then
-        echo "error: CA already exists (init --force rotates it and invalidates ALL client certs)" >&2
-        exit 1
-      fi
-      echo "→ rotating CA (backing up old CA first)"
-      mv "$CA_KEY" "$CA_KEY.old.$(date +%s)" 2>/dev/null || true
-      mv "$CA_CRT" "$CA_CRT.old.$(date +%s)" 2>/dev/null || true
-    fi
+    HAVE_CA=0
+    if [ -f "$CA_KEY" ] && [ -f "$CA_CRT" ]; then HAVE_CA=1; fi
 
     TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-    echo "→ generating private root CA"
-    gen_key "$TMP/ca.key"
-    openssl req -x509 -new -key "$TMP/ca.key" -sha256 -days "$DAYS_CA" \
-      -subj "/C=XX/O=$ORG/CN=Aegis CTI Private CA" \
-      -addext "basicConstraints=critical,CA:TRUE" \
-      -addext "keyUsage=critical,keyCertSign,cRLSign" \
-      -out "$TMP/ca.crt"
-    mv "$TMP/ca.key" "$CA_KEY"; mv "$TMP/ca.crt" "$CA_CRT"
+    if [ "$HAVE_CA" -eq 0 ]; then
+      echo "→ generating private root CA"
+      gen_key "$TMP/ca.key"
+      openssl req -x509 -new -key "$TMP/ca.key" -sha256 -days "$DAYS_CA" \
+        -subj "/C=XX/O=$ORG/CN=Aegis CTI Private CA" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -out "$TMP/ca.crt"
+      mv "$TMP/ca.key" "$CA_KEY"; mv "$TMP/ca.crt" "$CA_CRT"
+    elif [ "$FORCE" -eq 1 ]; then
+      echo "→ rotating CA (backing up old CA first — this invalidates ALL client certs)"
+      mv "$CA_KEY" "$CA_KEY.old.$(date +%s)"
+      mv "$CA_CRT" "$CA_CRT.old.$(date +%s)"
+      gen_key "$TMP/ca.key"
+      openssl req -x509 -new -key "$TMP/ca.key" -sha256 -days "$DAYS_CA" \
+        -subj "/C=XX/O=$ORG/CN=Aegis CTI Private CA" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -out "$TMP/ca.crt"
+      mv "$TMP/ca.key" "$CA_KEY"; mv "$TMP/ca.crt" "$CA_CRT"
+    else
+      echo "→ CA already exists; regenerating the server cert only (client certs stay valid)"
+    fi
 
     SAN=""
     for ip in "${IPS[@]}"; do SAN="$SAN,IP:$ip"; done
@@ -99,9 +107,11 @@ case "$cmd" in
     mv "$TMP/server.key" "$CERTS/server.key"; mv "$TMP/server.crt" "$CERTS/server.crt"
 
     chmod 600 "$CERTS"/*.key 2>/dev/null || true
-    echo "done. CA + server cert written to $CERTS/"
-    echo "next:  MTLS_CLIENT_P12_PASSWORD='<strong-password>' ./generate-certs.sh client <your-name>"
-    echo "then:  docker compose up -d"
+    echo "done. server cert updated — CA unchanged, so client certs stay valid — in: $CERTS/"
+    if [ "$HAVE_CA" -eq 0 ]; then
+      echo "next:  MTLS_CLIENT_P12_PASSWORD='<strong-password>' ./generate-certs.sh client <your-name>"
+    fi
+    echo "then:  docker compose restart caddy"
     ;;
 
   client)
