@@ -12,6 +12,7 @@ path = "src/main.rs"
 path = "src/lib.rs"
 
 [dependencies]
+aegis-video = { path = "../aegis-video" }
 aegis-common = { path = "../aegis-common" }
 aegis-ioc = { path = "../aegis-ioc" }
 tokio.workspace = true

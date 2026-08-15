@@ -74,6 +74,8 @@ struct ScanPayload {
     scan_type: String,
     #[serde(default)]
     profile: ScanProfile,
+    #[serde(default)]
+    exposure_id: Option<String>,
 }
 
 fn default_scan_type() -> String {
@@ -155,6 +157,9 @@ async fn run_scan_job(
     if p.scan_type == "web" {
         return run_web_scan(pool, cfg, &p).await;
     }
+    if p.scan_type == "proxy_audit" {
+        return run_exposure_audit(pool, &p).await;
+    }
 
     let ip: IpAddr = resolve_target(&p.target)
         .await
@@ -231,6 +236,214 @@ async fn run_scan_job(
 
     tracing::info!(scan=%p.scan_id, open_ports=open.len(), "scan complete");
     Ok(())
+}
+
+async fn run_exposure_audit(pool: &Pool, p: &ScanPayload) -> anyhow::Result<()> {
+    let exposure_id = p
+        .exposure_id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("missing exposure id"))?;
+    let ip: IpAddr = resolve_target(&p.target)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("could not resolve target"))?;
+    let mut http = false;
+    for port in [3128u16, 8000, 8080, 8888] {
+        if probe_http_proxy(ip, port).await {
+            http = true;
+            break;
+        }
+    }
+    let mut socks = false;
+    for port in [1080u16, 9050] {
+        if probe_socks(ip, port).await {
+            socks = true;
+            break;
+        }
+    }
+    let smtp = probe_smtp_relay(ip).await;
+    let dns = probe_dns_recursion(ip).await;
+    let weak_auth = probe_telnet_default(ip).await;
+    let overlap: Vec<(String, String)> = sqlx::query_as(
+        "SELECT id::text,value FROM aegis.iocs WHERE is_active=true AND value IN ($1,$2)",
+    )
+    .bind(&p.target)
+    .bind(ip.to_string())
+    .fetch_all(pool)
+    .await?;
+    let mut score = (if http { 30 } else { 0 })
+        + (if socks { 30 } else { 0 })
+        + (if smtp { 25 } else { 0 })
+        + (if dns { 15 } else { 0 });
+    if !overlap.is_empty() {
+        score = (score + if http || socks || dns { 40 } else { 20 }).min(100);
+    }
+    if !weak_auth.is_empty() {
+        score = (score + 25).min(100);
+    }
+    let overlap_json = serde_json::json!(overlap
+        .into_iter()
+        .map(|(ioc_id, value)| serde_json::json!({ "ioc_id": ioc_id, "value": value }))
+        .collect::<Vec<_>>());
+    sqlx::query("UPDATE aegis.exposure_audits SET proxy_http=$2,proxy_socks=$3,smtp_open_relay=$4,dns_open_resolver=$5,weak_auth_services=$6,ioc_overlap=$7,score=$8,status='completed' WHERE id=$1::uuid")
+      .bind(exposure_id).bind(http).bind(socks).bind(smtp).bind(dns).bind(serde_json::json!(weak_auth)).bind(overlap_json).bind(score).execute(pool).await?;
+    for (category, title, active) in [
+        ("proxy_http", "Open HTTP CONNECT proxy", http),
+        ("proxy_socks", "SOCKS service exposed", socks),
+        (
+            "smtp_relay",
+            "SMTP may accept unauthenticated external relay",
+            smtp,
+        ),
+        (
+            "dns_resolver",
+            "DNS service exposed for recursion review",
+            dns,
+        ),
+    ] {
+        if active {
+            insert_finding(
+                pool,
+                &p.scan_id,
+                p.asset_id.as_deref(),
+                category,
+                title,
+                "high",
+                "Authorized exposure audit detected an externally reachable relay-capable service.",
+                Some("Restrict the service to trusted networks and require authentication."),
+                None,
+                serde_json::json!({"target":p.target,"authorized":true}),
+            )
+            .await?;
+        }
+    }
+    sqlx::query("UPDATE aegis.scans SET status='completed',progress=100,finished_at=now() WHERE id=$1::uuid").bind(&p.scan_id).execute(pool).await?;
+    Ok(())
+}
+async fn probe_socks(ip: IpAddr, port: u16) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Ok(Ok(mut s)) = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect((ip, port)),
+    )
+    .await
+    else {
+        return false;
+    };
+    if s.write_all(&[5, 1, 0]).await.is_err() {
+        return false;
+    }
+    let mut response = [0u8; 2];
+    matches!(
+        tokio::time::timeout(Duration::from_secs(2), s.read_exact(&mut response)).await,
+        Ok(Ok(_))
+    ) && response == [5, 0]
+}
+async fn probe_dns_recursion(ip: IpAddr) -> bool {
+    let bind = if ip.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let Ok(socket) = tokio::net::UdpSocket::bind(bind).await else {
+        return false;
+    };
+    let mut query = vec![0x41, 0x47, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0];
+    for label in ["example", "com"] {
+        query.push(label.len() as u8);
+        query.extend_from_slice(label.as_bytes());
+    }
+    query.extend_from_slice(&[0, 0, 1, 0, 1]);
+    if socket.send_to(&query, (ip, 53)).await.is_err() {
+        return false;
+    }
+    let mut response = [0u8; 512];
+    match tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut response)).await {
+        Ok(Ok((n, _))) if n >= 12 => {
+            response[0..2] == [0x41, 0x47]
+                && response[3] & 0x80 != 0
+                && u16::from_be_bytes([response[6], response[7]]) > 0
+        }
+        _ => false,
+    }
+}
+async fn probe_smtp_relay(ip: IpAddr) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Ok(Ok(mut s)) = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect((ip, 25)),
+    )
+    .await
+    else {
+        return false;
+    };
+    let mut b = [0u8; 512];
+    let _ = tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await;
+    for cmd in [
+        b"HELO aegis.invalid\r\n".as_slice(),
+        b"MAIL FROM:<audit@aegis.invalid>\r\n".as_slice(),
+    ] {
+        if s.write_all(cmd).await.is_err() {
+            return false;
+        }
+        let _ = tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await;
+    }
+    if s.write_all(b"RCPT TO:<audit@external.invalid>\r\n")
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    let accepted = match tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await {
+        Ok(Ok(n)) => String::from_utf8_lossy(&b[..n]).starts_with("250"),
+        _ => false,
+    };
+    let _ = s.write_all(b"RSET\r\nQUIT\r\n").await;
+    accepted
+}
+async fn probe_http_proxy(ip: IpAddr, port: u16) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Ok(Ok(mut s)) = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect((ip, port)),
+    )
+    .await
+    else {
+        return false;
+    };
+    let _ = s
+        .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .await;
+    let mut b = [0u8; 256];
+    let n = match tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await {
+        Ok(Ok(n)) => n,
+        _ => return false,
+    };
+    let line = String::from_utf8_lossy(&b[..n]);
+    line.starts_with("HTTP/1.0 200") || line.starts_with("HTTP/1.1 200")
+}
+async fn probe_telnet_default(ip: IpAddr) -> Vec<serde_json::Value> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Ok(Ok(mut s)) = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect((ip, 23)),
+    )
+    .await
+    else {
+        return Vec::new();
+    };
+    let mut b = [0u8; 256];
+    let _ = tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await;
+    // One bounded attempt; credentials are intentionally not retained.
+    if s.write_all(b"admin\r\nadmin\r\n").await.is_err() {
+        return Vec::new();
+    }
+    let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), s.read(&mut b)).await else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&b[..n]).to_ascii_lowercase();
+    if text.contains("welcome") || text.contains("shell") || text.contains("last login") {
+        vec![
+            serde_json::json!({"service":"telnet","port":23,"creds_checked":"default pair","result":"possible_success"}),
+        ]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Execute a web application (DAST) scan: passive fingerprint + version→CVE,

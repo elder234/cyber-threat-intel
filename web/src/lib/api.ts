@@ -18,6 +18,7 @@ import type {
   AlertRuleConditions, ChannelTestResult,
   ContainerAudit, ContainerAuditDetail, ContainerAuditKind,
   WatchEntry, WatchKind, DarkwebSource, DarkwebHit, DarkwebHitStatus,
+  PcapAnalysis, ExposureAudit, VideoFingerprint,
 } from './types';
 
 const REFRESH_KEY = 'aegis.refresh';
@@ -25,6 +26,7 @@ const BASE = '/api';
 
 let accessToken: string | null = null;
 let onAuthChange: ((user: AuthUser | null) => void) | null = null;
+async function upload<T>(path:string, form:FormData):Promise<T>{ const headers:Record<string,string>={}; if(accessToken)headers.authorization=`Bearer ${accessToken}`; const res=await fetch(`${BASE}${path}`,{method:'POST',headers,body:form}); if(!res.ok)throw new ApiError(res.status,await res.json().catch(()=>null)); return res.json() as Promise<T>; }
 
 // Mirror the live access token onto window so the WebSocket layer (which must
 // not import this module — it would create a cycle) can read it when it opens
@@ -306,4 +308,7 @@ export const api = {
     triageHit: (id: string, status: DarkwebHitStatus) =>
       request<{ id: string; status: DarkwebHitStatus }>(`/darkweb/hits/${id}`, { method: 'PATCH', body: { status } }),
   },
+  pcaps: { list:()=>request<{data:PcapAnalysis[]}>('/pcaps'), get:(id:string)=>request<PcapAnalysis & {findings:unknown[]}>(`/pcaps/${id}`), submit:(f:FormData)=>upload<{id:string}>('/pcaps',f), remove:(id:string)=>request<void>(`/pcaps/${id}`,{method:'DELETE'}) },
+  exposure: { list:()=>request<{data:ExposureAudit[]}>('/exposure'), assets:()=>request<{data:{id:string;kind:string;value:string;label:string|null}[]}>('/exposure/assets'), launch:(assetId:string)=>request<{id:string;status:string}>('/exposure',{method:'POST',body:{assetId}}) },
+  video: { list:()=>request<{data:VideoFingerprint[]}>('/video/fingerprints'), get:(id:string)=>request<VideoFingerprint & {sightings:unknown[]}>(`/video/fingerprints/${id}`), submit:(f:FormData)=>upload<{id:string}>('/video/fingerprints',f), sources:()=>request<{data:unknown[]}>('/video/sources'), sightings:()=>request<{data:unknown[]}>('/video/sightings'), addSource:(body:unknown)=>request('/video/sources',{method:'POST',body}) },
 };

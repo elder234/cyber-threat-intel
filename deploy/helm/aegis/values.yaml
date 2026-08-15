@@ -133,7 +133,7 @@ analyzer:
     pullPolicy: IfNotPresent
   replicas: 1
   port: 7000
-  maxBytes: "33554432"
+  maxBytes: "201326592"
   resources:
     requests:
       cpu: 250m

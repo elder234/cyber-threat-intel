@@ -49,7 +49,7 @@ data:
   # Analyzer
   ANALYZER_URL: "http://analyzer:7000"
   ANALYZER_PORT: "7000"
-  ANALYZER_MAX_BYTES: "33554432"
+  ANALYZER_MAX_BYTES: "201326592"
 
   # Seed admin
   SEED_ADMIN_EMAIL: "admin@aegis.local"

@@ -1,14 +1,24 @@
 //! Dark-web monitor collector (Feature F-DARKWEB).
 //!
-//! Polls curated PUBLIC leak/paste/forum sources **exclusively through the Tor
-//! SOCKS proxy**, matches fetched page text against the operator watchlist, and
-//! upserts hits (which the API turns into alerts). Read-only: it fetches and
-//! parses public pages and never authenticates, posts, purchases, or interacts.
+//! Polls curated PUBLIC leak/paste/forum sources and matches fetched page text
+//! against the operator watchlist, then upserts hits (which the API turns into
+//! alerts). Read-only: it fetches and parses public pages and never
+//! authenticates, posts, purchases, or interacts.
+//!
+//! Sources are routed by `is_onion`:
+//! * `is_onion = true` (onion addresses) — fetched **exclusively through the Tor
+//!   SOCKS proxy**. If `TOR_SOCKS_PROXY` is unset those sources are skipped;
+//!   there is never a clearnet fallback for a hidden service, which would leak
+//!   the platform's real IP.
+//! * `is_onion = false` (public clearnet indexers like aggregator APIs and
+//!   leak-site mirrors) — fetched directly; no Tor required.
+//!
+//! Sources with `format = 'json'` have their response parsed into records
+//! (`json_docs`), matching and storing each victim's own URL so re-observations
+//! dedupe per record rather than per source.
 //!
 //! ## Safety invariants (see AGENTS.md Ground rules)
-//! * **Fail closed on Tor.** If `TOR_SOCKS_PROXY` is unset the collector refuses
-//!   to run — it never falls back to a clearnet request, which would leak the
-//!   platform's real IP to a hidden service.
+//! * **Fail closed on Tor.** An onion source is never fetched without the proxy.
 //! * **Redact on the way in.** [`redact`] masks emails/card-like numbers and
 //!   [`snippet_around`] truncates context before anything is persisted. The
 //!   platform stores evidence of exposure, not a usable copy of a dump.
@@ -42,8 +52,9 @@ pub struct WatchEntry {
 pub struct Source {
     pub id: String,
     pub name: String,
-    pub onion_url: String,
+    pub url: String,
     pub is_onion: bool,
+    pub format: String, // html | json
 }
 
 /// A watchlist match found in a page, ready to upsert into `darkweb_hits`.
@@ -224,16 +235,52 @@ fn boundary_ok(hay: &str, pos: usize, len: usize) -> bool {
     before_ok && after_ok
 }
 
-/// Poll every enabled source once. **Fails closed**: if the Tor proxy is not
-/// configured, logs and returns without making any request.
-pub async fn poll_all(pool: &Pool, tor_socks: Option<&str>) -> anyhow::Result<usize> {
-    let Some(proxy) = tor_socks.filter(|p| !p.is_empty()) else {
-        tracing::warn!(
-            "dark-web monitor: TOR_SOCKS_PROXY is not set — refusing to poll (fail-closed). \
-             No clearnet fallback is attempted."
-        );
-        return Ok(0);
+/// Extract searchable documents from a structured JSON response, e.g. a leak
+/// aggregator API. Returns `(document_url, document_text)` pairs:
+/// * a JSON **array** → one document per element, using the element's own
+///   `url`/`claim_url` field (so every victim dedupes by its own page);
+/// * a JSON **object** → one document keyed on the source URL;
+/// * anything else (or unparseable) → a single document of the raw body.
+///
+/// String fields most useful for leak matching are joined with newlines;
+/// nested structures and non-string values are ignored.
+pub fn json_docs(body: &str, source_url: &str) -> Vec<(String, String)> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return vec![(source_url.to_string(), body.to_string())];
     };
+    let elements: Vec<&serde_json::Value> = match &value {
+        serde_json::Value::Array(arr) => arr.iter().collect(),
+        _ => vec![&value],
+    };
+    let mut docs = Vec::new();
+    for el in elements {
+        let Some(obj) = el.as_object() else { continue };
+        let mut text = String::new();
+        for (_, v) in obj {
+            if let serde_json::Value::String(s) = v {
+                text.push_str(s);
+                text.push('\n');
+            }
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+        let doc_url = ["url", "claim_url"]
+            .iter()
+            .find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
+            .filter(|u| !u.is_empty())
+            .unwrap_or(source_url)
+            .to_string();
+        docs.push((doc_url, text));
+    }
+    docs
+}
+
+/// Poll every enabled source once. Onion sources are skipped unless the Tor
+/// proxy is configured (**fail-closed**); clearnet sources (`is_onion=false`)
+/// poll directly. JSON sources are parsed into per-record documents.
+pub async fn poll_all(pool: &Pool, tor_socks: Option<&str>) -> anyhow::Result<usize> {
+    let proxy = tor_socks.filter(|p| !p.is_empty());
 
     let watch = load_watchlist(pool).await?;
     if watch.is_empty() {
@@ -246,18 +293,35 @@ pub async fn poll_all(pool: &Pool, tor_socks: Option<&str>) -> anyhow::Result<us
         return Ok(0);
     }
 
-    // A dedicated Tor client. For onion sources we hard-require the proxy; the
-    // `is_onion` flag is a belt-and-braces guard against a misconfigured row.
-    let client = http::client(Some(proxy))?;
+    // Clearnet client for public indexers; a dedicated Tor client for onions.
+    let clearnet = http::default_client()?;
+    let tor = match &proxy {
+        Some(p) => Some(http::client(Some(p))?),
+        None => None,
+    };
+    if tor.is_none() && sources.iter().any(|s| s.is_onion) {
+        tracing::warn!(
+            "dark-web monitor: TOR_SOCKS_PROXY is not set — onion sources will be skipped \
+             (fail-closed, no clearnet fallback). Clearnet sources still poll."
+        );
+    }
+
     let mut total_hits = 0usize;
 
     for src in &sources {
-        if src.is_onion && (proxy.is_empty()) {
-            // Unreachable given the guard above, but explicit for the invariant.
-            tracing::error!(source = %src.name, "onion source without Tor proxy — skipped");
-            continue;
-        }
-        match poll_source(pool, &client, src, &watch).await {
+        let client = if src.is_onion {
+            match &tor {
+                Some(c) => c,
+                None => {
+                    tracing::error!(source = %src.name, "onion source without Tor proxy — skipped (fail-closed)");
+                    mark_source_health(pool, &src.id, "unreachable").await.ok();
+                    continue;
+                }
+            }
+        } else {
+            &clearnet
+        };
+        match poll_source(pool, client, src, &watch).await {
             Ok(n) => {
                 total_hits += n;
                 mark_source_health(pool, &src.id, "ok").await.ok();
@@ -273,7 +337,9 @@ pub async fn poll_all(pool: &Pool, tor_socks: Option<&str>) -> anyhow::Result<us
     Ok(total_hits)
 }
 
-/// Fetch one source over Tor and upsert any matches. Read-only GET.
+/// Fetch one source and upsert any matches. Read-only GET. For `json` sources
+/// the body is parsed into per-record documents; `html` (default) matches the
+/// raw page text.
 async fn poll_source(
     pool: &Pool,
     client: &reqwest::Client,
@@ -281,33 +347,40 @@ async fn poll_source(
     watch: &[WatchEntry],
 ) -> anyhow::Result<usize> {
     let body = client
-        .get(&src.onion_url)
+        .get(&src.url)
         .send()
         .await?
         .error_for_status()?
         .text()
         .await?;
 
-    let hits = match_watchlist(&body, watch);
+    let docs: Vec<(String, String)> = if src.format == "json" {
+        json_docs(&body, &src.url)
+    } else {
+        vec![(src.url.clone(), body)]
+    };
+
     let mut inserted = 0usize;
-    for m in &hits {
-        let affected = sqlx::query(
-            "INSERT INTO aegis.darkweb_hits
-               (source_id, watchlist_id, url, matched_value, snippet, severity)
-             VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::aegis.severity)
-             ON CONFLICT (source_id, url, matched_value) DO NOTHING",
-        )
-        .bind(&src.id)
-        .bind(&m.watchlist_id)
-        .bind(&src.onion_url)
-        .bind(&m.matched_value)
-        .bind(&m.snippet)
-        .bind(&m.severity)
-        .execute(pool)
-        .await?
-        .rows_affected();
-        if affected > 0 {
-            inserted += 1;
+    for (doc_url, doc) in &docs {
+        for m in match_watchlist(doc, watch) {
+            let affected = sqlx::query(
+                "INSERT INTO aegis.darkweb_hits
+                   (source_id, watchlist_id, url, matched_value, snippet, severity)
+                 VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::aegis.severity)
+                 ON CONFLICT (source_id, url, matched_value) DO NOTHING",
+            )
+            .bind(&src.id)
+            .bind(&m.watchlist_id)
+            .bind(doc_url)
+            .bind(&m.matched_value)
+            .bind(&m.snippet)
+            .bind(&m.severity)
+            .execute(pool)
+            .await?
+            .rows_affected();
+            if affected > 0 {
+                inserted += 1;
+            }
         }
     }
 
@@ -316,7 +389,7 @@ async fn poll_source(
         .execute(pool)
         .await?;
 
-    tracing::info!(source = %src.name, matched = hits.len(), new = inserted, "dark-web source polled");
+    tracing::info!(source = %src.name, new = inserted, "dark-web source polled");
     Ok(inserted)
 }
 
@@ -339,8 +412,8 @@ async fn load_watchlist(pool: &Pool) -> anyhow::Result<Vec<WatchEntry>> {
 }
 
 async fn load_due_sources(pool: &Pool) -> anyhow::Result<Vec<Source>> {
-    let rows = sqlx::query_as::<_, (String, String, String, bool)>(
-        "SELECT id::text, name, onion_url, is_onion
+    let rows = sqlx::query_as::<_, (String, String, String, bool, String)>(
+        "SELECT id::text, name, url, is_onion, format
            FROM aegis.darkweb_sources
           WHERE enabled = true
             AND (last_polled_at IS NULL
@@ -350,11 +423,12 @@ async fn load_due_sources(pool: &Pool) -> anyhow::Result<Vec<Source>> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, onion_url, is_onion)| Source {
+        .map(|(id, name, url, is_onion, format)| Source {
             id,
             name,
-            onion_url,
+            url,
             is_onion,
+            format,
         })
         .collect())
 }
@@ -460,5 +534,42 @@ mod tests {
     fn case_insensitive_match() {
         let hits = match_watchlist("BREACH: AcMeCoRp", &[w("1", "brand", "acmecorp")]);
         assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn json_array_docs_use_element_url() {
+        let body = r#"[
+          {"victim":"Acme Corp","domain":"acme.com","url":"https://x/id/abc","claim_url":"http://onion/1"},
+          {"victim":"Other Co","domain":"other.io","url":"https://x/id/def","claim_url":""}
+        ]"#;
+        let docs = json_docs(body, "https://source/api");
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].0, "https://x/id/abc");
+        assert_eq!(docs[1].0, "https://x/id/def");
+        assert!(docs[0].1.contains("Acme Corp"));
+    }
+
+    #[test]
+    fn json_object_docs_fall_back_to_source_url() {
+        let body = r#"{"victim":"Solo Target","group":"qilin"}"#;
+        let docs = json_docs(body, "https://source/api");
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].0, "https://source/api");
+        assert!(docs[0].1.contains("qilin"));
+    }
+
+    #[test]
+    fn json_unparseable_falls_back_to_raw_body() {
+        let docs = json_docs("not json at all", "https://source/api");
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].0, "https://source/api");
+        assert!(docs[0].1.contains("not json"));
+    }
+
+    #[test]
+    fn json_empty_records_are_skipped() {
+        let body = r#"[{"victim":"","domain":"","url":""},{"x":42}]"#;
+        let docs = json_docs(body, "https://source/api");
+        assert!(docs.is_empty());
     }
 }

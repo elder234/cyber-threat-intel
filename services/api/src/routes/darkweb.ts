@@ -96,9 +96,9 @@ export default async function darkwebRoutes(app: FastifyInstance): Promise<void>
   app.get('/sources', { preHandler: [app.requirePerms('darkweb:read')], schema: { tags: ['darkweb'] } },
     async () => {
       const { rows } = await pool.query(
-        `SELECT id, name, kind, is_onion, enabled, poll_interval_secs, last_polled_at, health
+        `SELECT id, name, kind, format, is_onion, enabled, poll_interval_secs, last_polled_at, health
            FROM aegis.darkweb_sources ORDER BY name`);
-      // onion_url intentionally omitted from the list view — operators manage it
+      // url intentionally omitted from the list view — operators manage it
       // out-of-band; it is not needed by the console and shouldn't be broadcast.
       return { data: rows };
     });

@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ── Runtime image ────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl \
+    ca-certificates curl ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home aegis
 

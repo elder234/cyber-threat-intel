@@ -570,8 +570,9 @@ public pages, never authenticate, post, purchase, or interact.
 
 - `aegis.watchlist` — id, kind (`domain`,`email`,`keyword`,`brand`,`bin`), value, label,
   severity, enabled, created_by, timestamps.
-- `aegis.darkweb_sources` — id, name, kind (`leak_site`,`paste`,`forum`), onion_url (or
-  clearnet-mirror flag), enabled, last_polled_at, poll_interval, health.
+- `aegis.darkweb_sources` — id, name, kind (`leak_site`,`paste`,`forum`), url + `is_onion`
+  (`true` = MUST route via Tor, `false` = clearnet indexer), `format` (`html`|`json`),
+  enabled, last_polled_at, poll_interval, health.
 - `aegis.darkweb_hits` — id, source_id, watchlist_id, url, snippet (redacted/truncated),
   matched_value, observed_at, severity, alert_id (FK once alerted), status. Unique on
   (source_id, url, matched_value) to dedupe re-observations.
@@ -625,3 +626,133 @@ New module `crates/aegis-collectors/src/darkweb.rs`:
   should carry pure-logic unit tests (signature matching, payload/marker detection, watchlist
   matching) since the network paths can't run in CI.
 - **New migration, never edit an applied one.** Next free number is `0016`.
+
+---
+
+# Feature backlog v2 (2026-08-14) — pcap analysis, botnet exposure audit, video first-seen
+
+Three features, build in this order. Step 0 must land first so the tree is clean.
+
+## Step 0 — Land pending dark-web clearnet work
+
+Uncommitted: `db/migrations/0016_darkweb_clearnet_sources.sql`, `darkweb.rs`,
+`collectors main.rs`, `darkweb.ts`, `web types.ts`, `AGENTS.md`/`SECURITY.md` edits.
+Commit (exclude `package-lock.json` and `opencode.json`), push, CI builds, deploy via
+`git pull` + `docker compose pull && docker compose up -d --force-recreate` on the VPS
+(`root@165.227.96.161`, `/root/cyber-threat-intel`). Verify ransomware.live victims JSON
+and the WikiLeaks V2 mirror poll clean.
+
+## F-PCAP — pcap/pcapng upload analyzer (migration `0017`)
+
+Upload a Wireshark capture; the analyzer returns a full report; only metadata is stored.
+
+- **Migration `0017_pcap_analysis.sql`** (mirror `0012`/`0015` style):
+  - `aegis.pcap_analyses` — id, sha256 UNIQUE, size_bytes, format, packet_count,
+    duration_ms, interface_count, top_talkers jsonb, protocol_mix jsonb, dns_queries
+    jsonb, tls_snis text[], http_hosts text[], suspicious jsonb, ioc_matches jsonb,
+    score int, summary, requested_by, created_at/updated_at. **No raw capture column.**
+  - `aegis.pcap_findings` — id, analysis_id FK, finding_id, severity, title, detail
+    (same shape as `malware_findings`).
+  - Permissions `pcap:read` (admin/analyst/viewer), `pcap:run` (admin/analyst) + grants.
+- **New crate `crates/aegis-pcap`** (mirror `aegis-malware` layout; deps `pcap-parser` 0.17
+  + `etherparse` 0.21 — both pure Rust, zero system deps, no libpcap/tshark):
+  - `parse.rs` container (pcap+pcapng, streaming), `packet.rs` (etherparse SlicedPacket:
+    Ethernet/VLAN/IPv4/v6/TCP/UDP/ICMP/ARP), `flows.rs` 5-tuple aggregation → top
+    talkers/ports/unique hosts, `dns.rs` queries+counts (DGA signal), `tls.rs`
+    SNI/version, `http.rs` host/URI/method from unfragmented packets, `heuristics.rs`
+    (SYN-flood bursts, Mirai signature — SYN seq == dst IP, Bashlite `!` prefix,
+    beacon-like regularity), `ioc.rs` pure matcher over an IOC slice, `lib.rs`
+    `analyze_capture(&[u8], &[Ioc]) -> PcapReport`.
+  - Analyzer stays offline: the API passes the active IOC list in the request body.
+  - Pure-logic unit tests craft synthetic pcap bytes; network paths carry
+    `⚠️ RUNTIME VERIFICATION REQUIRED`.
+- **Analyzer**: add `/analyze/pcap` to `aegis-analyzer/src/main.rs` next to `/analyze`
+  (same `RequestBodyLimitLayer`; a small JSON body envelope for the IOC list).
+- **Dockerfile: UNCHANGED** (pure Rust parsing).
+- **API `services/api/src/routes/pcaps.ts`**: POST `/api/pcaps` (stream → analyzer, 413
+  on overflow, upsert on sha256), GET `/api/pcaps`, GET `/api/pcaps/:id`, DELETE. Gated
+  `pcap:run`/`pcap:read`. IOC list pulled from `aegis.iocs`
+  (`type IN ('ipv4','ipv6','domain','url')` — enum from `0001`).
+- **UI `web/src/pages/Pcaps.tsx`** + nav + `types.ts`: upload dropzone, report card
+  (packet count, duration, protocol bars, top talkers), findings table with severity
+  chips, IOC-match panel linking to `/iocs`.
+
+## F-EXPOSURE-CORRELATION — botnet exposure audit (migration `0018`)
+
+Ties feeds/IOCs to assets: "does my asset talk to known-bad infrastructure, and is it
+running a service that makes it abusable as a proxy/relay (free bandwidth)?" Strictly
+defensive — probes authorized assets only, checks-but-never-uses credentials, output is a
+remediation list.
+
+- **Migration `0018_exposure_audit.sql`**: `aegis.exposure_audits` — id, asset_id FK,
+  scan_id FK, proxy_http bool, proxy_socks bool, smtp_open_relay bool,
+  dns_open_resolver bool, weak_auth_services jsonb (service/port/creds_checked, never the
+  password), ioc_overlap jsonb (matched ioc ids/values), beacon_flows jsonb, score int,
+  status, timestamps. Reuses `aegis.scans` (`scan_type='proxy_audit'`) and `aegis.findings`
+  for per-check detail rows — do NOT add a parallel findings table. Permissions
+  `exposure:read` (admin/analyst/viewer), `exposure:run` (admin/analyst).
+- **Scanner `crates/aegis-scanner/src/exposure.rs`** — new scan category gated by the SAME
+  `assets.is_authorized` check as `main.rs:101-112` (mirror it before any probe):
+  - SAFE probes: open HTTP/SOCKS proxy detection, SMTP relay HELO test, DNS recursion
+    check, single non-destructive default-credential check on telnet/SSH (creds never
+    used beyond one auth attempt).
+  - IOC cross-ref: asset's observed IPs/domains vs active `aegis.iocs` — a host that both
+    talks known-bad AND runs an abusable service → high finding "candidate for proxy/relay
+    abuse".
+  - Beacon detection: via F-PCAP analyzer on a capture attached to the asset (host
+    beaconing to a C2 IOC = confirmed-compromised, critical).
+  - Pure-logic unit tests for probe-result classification and scoring.
+- **API `services/api/src/routes/exposure.ts`**: launch audit (reuse `scan:run` or new
+  `exposure:run`), GET audits, GET `/:id`, triage. UI: Exposure tab on Scans page ranking
+  assets by abusable + known-bad overlap.
+
+## F-VIDEO — video fingerprinting + first-seen attribution (migration `0019`)
+
+Register a video once; store hashes + perceptual frame-set + ffprobe metadata ONLY (never
+bytes); monitor watched sources for near-duplicate sightings; build a first-seen timeline
+so the earliest appearance + device metadata narrows the original poster.
+
+- **Migration `0019_video_first_seen.sql`**:
+  - `aegis.video_fingerprints` — id, sha256 UNIQUE, md5, size_bytes, duration_ms, width,
+    height, fps, codec, encoder, creation_time, gps, file_type, perceptual_frame_hashes
+    text[], status, summary, requested_by, timestamps.
+  - `aegis.video_sources` — id, name, kind CHECK IN
+    ('telegram','x','facebook','snapchat','manual'), config jsonb, enabled,
+    poll_interval_secs, last_polled_at, health.
+  - `aegis.video_sightings` — id, fingerprint_id FK, source_id FK, url, author, snippet
+    (redacted), observed_at, matched_via ('perceptual'|'exact'|'manual'), confidence
+    numeric, alert_id FK, status; UNIQUE (source_id, url).
+  - Permissions `video:read`, `video:run`; alert-rule seed `video.sighting`.
+- **New crate `crates/aegis-video`**: `ffprobe.rs` (shell `ffprobe -print_format json` →
+  typed metadata), `frames.rs` (ffmpeg rawvideo pipe, ~16-32 sampled frames scaled 160x90
+  gray), `dhash.rs` (9x8 difference hash → u64/frame), `match.rs` (Hamming ≤8, set-overlap
+  → confidence), `lib.rs` `analyze_video(&[u8]) -> VideoReport`. Pure-logic tests for
+  dhash/match/ffprobe-JSON parsing; ffmpeg paths carry the RUNTIME marker.
+- **Dockerfile**: add `ffmpeg` to the runtime stage apt install (only system change).
+- **Analyzer**: add `/analyze/video`; `ANALYZER_MAX_BYTES` env, 128 MiB default for video.
+- **Collector `aegis-collectors/src/video.rs`** + main.rs wiring (mirror `darkweb.rs`):
+  poll due `video_sources`; Telegram connector is read-only Bot API (`getUpdates`) — the
+  only autonomous source for now. X connector ships DISABLED until a paid API key exists.
+  Facebook/Snapchat are manual-report-only via POST `/sightings` (no public API; never
+  scrape ToS-protected endpoints). Jitter + rate-limit; redact snippets; fail per-source.
+- **API `services/api/src/routes/video.ts`**: POST `/fingerprints` (stream → analyzer, 413,
+  metadata-only), GET `/fingerprints`, GET `/fingerprints/:id` (+ sightings timeline),
+  source CRUD, GET/POST `/sightings`, PATCH `/sightings/:id`, `raiseAlertsForNewSightings`
+  via `aegis.raise_alert` (dedupe pattern from `darkweb.ts:143`).
+- **UI `web/src/pages/VideoTracker.tsx`** + nav + `types.ts`: upload card, fingerprint
+  metadata grid, first-seen timeline, sightings table, source manager.
+
+## Ground rules for all three (do not skip)
+
+- Metadata + hashes only — raw upload bytes NEVER persisted, logged, or forwarded (malware
+  posture; analyzer drops bytes at end of request).
+- New migration per feature, never edit an applied one. Runtime `sqlx::query()` only (no
+  compile-time macros); regenerate `Cargo.lock` if deps change (F-PCAP adds `pcap-parser` +
+  `etherparse`; F-VIDEO adds none, uses ffmpeg).
+- Every API route `requirePerms`-gated; do not weaken the auth layer.
+- Active probing only against `assets.is_authorized = true`, mirrored in Rust before any
+  probe; probes are non-destructive; credentials checked, never used beyond one attempt.
+- Snippets/evidence redacted on the way in; no ToS-bypass scraping of X/FB/Snapchat.
+- Verify: `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`,
+  `cargo fmt --check`; API `npm run build` + `npm test`; web `npm run typecheck` /
+  `npm run lint` / `npm run build`.

@@ -21,11 +21,12 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use base64::Engine;
 use std::net::SocketAddr;
 use tower_http::limit::RequestBodyLimitLayer;
 
 /// Default max sample size accepted (32 MiB). Override with ANALYZER_MAX_BYTES.
-const DEFAULT_MAX_BYTES: usize = 32 * 1024 * 1024;
+const DEFAULT_MAX_BYTES: usize = 192 * 1024 * 1024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -48,6 +49,8 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/analyze", post(analyze))
+        .route("/analyze/pcap", post(analyze_pcap))
+        .route("/analyze/video", post(analyze_video))
         // Raise the body limit above the small axum default so large samples fit,
         // then cap it explicitly to `max_bytes`.
         .layer(RequestBodyLimitLayer::new(max_bytes))
@@ -78,5 +81,48 @@ async fn analyze(body: Bytes) -> impl IntoResponse {
     }
     let report = aegis_malware::analyze(&body);
     // Bytes (`body`) drop at end of scope.
+    (StatusCode::OK, Json(report)).into_response()
+}
+
+async fn analyze_pcap(body: Bytes) -> impl IntoResponse {
+    if body.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"empty_body"})),
+        )
+            .into_response();
+    }
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        capture_base64: String,
+        #[serde(default)]
+        iocs: Vec<String>,
+    }
+    let Ok(env) = serde_json::from_slice::<Envelope>(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"invalid_envelope"})),
+        )
+            .into_response();
+    };
+    let Ok(capture) = base64::engine::general_purpose::STANDARD.decode(env.capture_base64) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"invalid_capture"})),
+        )
+            .into_response();
+    };
+    let report = aegis_pcap::analyze_capture(&capture, &env.iocs);
+    (StatusCode::OK, Json(report)).into_response()
+}
+async fn analyze_video(body: Bytes) -> impl IntoResponse {
+    if body.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"empty_body"})),
+        )
+            .into_response();
+    }
+    let report = aegis_video::analyze_video_with_tools(&body);
     (StatusCode::OK, Json(report)).into_response()
 }

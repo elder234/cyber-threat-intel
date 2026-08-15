@@ -335,6 +335,7 @@ export interface DarkwebSource {
   id: string;
   name: string;
   kind: DarkwebSourceKind;
+  format: 'html' | 'json';
   is_onion: boolean;
   enabled: boolean;
   poll_interval_secs: number;
@@ -355,6 +356,10 @@ export interface DarkwebHit {
   alert_id: string | null;
   status: DarkwebHitStatus;
 }
+
+export interface PcapAnalysis { id:string; sha256:string; size_bytes:number; format:string; packet_count:number; duration_ms:number; protocol_mix:Record<string,number>; top_talkers:unknown[]; ioc_matches:unknown[]; score:number; summary:string; created_at:string }
+export interface ExposureAudit { id:string; asset_id:string; proxy_http:boolean; proxy_socks:boolean; smtp_open_relay:boolean; dns_open_resolver:boolean; ioc_overlap:unknown[]; beacon_flows:unknown[]; score:number; status:string; created_at:string }
+export interface VideoFingerprint { id:string; sha256:string; md5:string; size_bytes:number; duration_ms:number|null; width:number|null; height:number|null; codec:string|null; perceptual_frame_hashes:string[]; summary:string; created_at:string }
 
 // WebSocket envelope pushed over /ws (Redis "events" channel fan-out).
 export type LiveEvent =

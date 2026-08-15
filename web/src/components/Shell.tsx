@@ -21,6 +21,9 @@ const NAV: { to: string; label: string; glyph: JSX.Element }[] = [
   { to: '/containers', label: 'Containers', glyph: <Glyph d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5m0 0l9-5m-9 5v9" /> },
   { to: '/malware', label: 'Malware', glyph: <Glyph d="M12 3l1 5h5l-4 3 1.5 5L12 13l-3.5 3L10 11 6 8h5z" /> },
   { to: '/darkweb', label: 'Dark Web', glyph: <Glyph d="M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c2.5 2.4 2.5 15.6 0 18M12 3c-2.5 2.4-2.5 15.6 0 18" /> },
+  { to: '/pcaps', label: 'PCAPs', glyph: <Glyph d="M4 6h16M4 12h16M4 18h16" /> },
+  { to: '/exposure', label: 'Exposure', glyph: <Glyph d="M12 3l8 4v6c0 4-3 7-8 8-5-1-8-4-8-8V7z" /> },
+  { to: '/video', label: 'Video', glyph: <Glyph d="M4 5h12v14H4zM16 9l4-2v10l-4-2" /> },
   { to: '/feeds', label: 'Feeds', glyph: <Glyph d="M4 4a16 16 0 0116 16M4 11a9 9 0 019 9M5 19a1 1 0 100-2 1 1 0 000 2z" /> },
 ];
 

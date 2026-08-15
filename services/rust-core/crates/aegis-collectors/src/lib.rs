@@ -17,6 +17,7 @@ pub mod mitre;
 pub mod nvd;
 pub mod sink;
 pub mod urlhaus;
+pub mod video;
 
 use aegis_common::JobQueue;
 use serde_json::Value;

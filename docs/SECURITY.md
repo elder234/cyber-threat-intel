@@ -72,6 +72,6 @@ configured notification channels, and each hit links back to its alert via
 
 - Secrets (DB URL, JWT secret, channel webhooks, any API keys) come from the
   environment, never the repo. Rotate any key that is ever committed or exposed.
-- The web console never receives `onion_url` values in source listings; operators
-  manage those addresses out-of-band.
+- The web console never receives dark-web source `url` values in source listings;
+  operators manage those addresses out-of-band.
 - Migrations are append-only. Never edit an applied migration; add a new one.

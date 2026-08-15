@@ -8,6 +8,7 @@
 //! `aegis.assets.is_authorized = true`. Ad-hoc targets are the operator's
 //! responsibility — scan only systems you are permitted to test.
 
+pub mod exposure;
 pub mod http_headers;
 pub mod ports;
 pub mod portspec;

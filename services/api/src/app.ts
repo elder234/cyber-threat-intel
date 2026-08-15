@@ -23,6 +23,9 @@ import scanRoutes from './routes/scans.js';
 import containerRoutes from './routes/container.js';
 import malwareRoutes from './routes/malware.js';
 import darkwebRoutes from './routes/darkweb.js';
+import pcapRoutes from './routes/pcaps.js';
+import exposureRoutes from './routes/exposure.js';
+import videoRoutes from './routes/video.js';
 import healthRoutes from './routes/health.js';
 import registerWs from './ws/hub.js';
 import registerGraphql from './graphql/index.js';
@@ -98,6 +101,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(containerRoutes, { prefix: '/api/container' });
   await app.register(malwareRoutes, { prefix: '/api/malware' });
   await app.register(darkwebRoutes, { prefix: '/api/darkweb' });
+  await app.register(pcapRoutes, { prefix: '/api/pcaps' });
+  await app.register(exposureRoutes, { prefix: '/api/exposure' });
+  await app.register(videoRoutes, { prefix: '/api/video' });
 
   // ── GraphQL + WebSockets ───────────────────────────────────────────────────
   await registerGraphql(app);

@@ -235,7 +235,7 @@ services:
       <<: *common-env
       RUST_LOG: ${RUST_LOG:-info}
       ANALYZER_PORT: "7000"
-      ANALYZER_MAX_BYTES: "33554432"
+      ANALYZER_MAX_BYTES: "201326592"
     expose:
       - "7000"
     healthcheck:
