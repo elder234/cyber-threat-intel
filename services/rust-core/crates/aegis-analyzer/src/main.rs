@@ -26,7 +26,7 @@ use std::net::SocketAddr;
 use tower_http::limit::RequestBodyLimitLayer;
 
 /// Default max sample size accepted (32 MiB). Override with ANALYZER_MAX_BYTES.
-const DEFAULT_MAX_BYTES: usize = 192 * 1024 * 1024;
+const DEFAULT_MAX_BYTES: usize = 256 * 1024 * 1024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
