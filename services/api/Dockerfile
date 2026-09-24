@@ -1,7 +1,8 @@
 # ── Aegis API — multi-stage build ───────────────────────────────────────────
 # NOTE: build context is the REPO ROOT (see docker-compose.yml) so we can copy
 # both services/api and the shared db/ migrations into the image.
-FROM node:20-alpine AS build
+# Node 20 (Iron) reached EOL 2026-04-30 — no further security patches (see docs/SECURITY.md M5).
+FROM node:22-alpine AS build
 WORKDIR /app
 
 # argon2 needs a build toolchain for its native addon
@@ -18,7 +19,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
