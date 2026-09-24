@@ -103,7 +103,9 @@ pub fn analyze_video_with_tools(bytes: &[u8]) -> VideoReport {
         if out.status.success() {
             report.perceptual_frame_hashes = out
                 .stdout
-                .chunks_exact(72)
+                .as_chunks::<72>()
+                .0
+                .iter()
                 .map(|f| format!("{:016x}", dhash(f, 9)))
                 .collect();
         }

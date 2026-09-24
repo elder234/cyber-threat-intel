@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# ----- build stage -------------------------------------------------------
-FROM node:20-alpine AS build
+# Node 20 (Iron) reached EOL 2026-04-30 — no further security patches (see docs/SECURITY.md M5).
+FROM node:22-alpine AS build
 WORKDIR /app
 
 # Install deps first (layer cache) then build.
@@ -11,7 +11,9 @@ COPY . .
 RUN npm run build
 
 # ----- runtime stage (static nginx) --------------------------------------
-FROM nginx:1.27-alpine AS runtime
+# nginx 1.27-alpine is below the fix line for the rewrite-module advisory
+# (CVE-2026-9256, fixed in 1.28.3) — 1.28.x stable is used instead.
+FROM nginx:1.28-alpine AS runtime
 
 # SPA routing + API/WS proxy config.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
