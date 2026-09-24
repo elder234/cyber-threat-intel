@@ -91,7 +91,7 @@ fn blocked_for(url: &Url) -> bool {
         return is_blocked_ip(&ip);
     }
 
-    let Ok(port) = url.port_or_known_default() else {
+    let Some(port) = url.port_or_known_default() else {
         return true;
     };
     let Ok(addrs) = (host, port).to_socket_addrs() else {
